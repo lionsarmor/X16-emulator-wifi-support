@@ -554,19 +554,36 @@ void wifi_serial_step(int clocks)
                 uregs[sel].ibyte_bits_remain--;
             }
             if (uregs[sel].ibyte_bits_remain == 0 && dev_rx[sel].count > 0) {
-                uint8_t b;
                 if (uregs[sel].ifsz < (uregs[sel].fcr_fifo_enable ? 16 : 1)) {
+                    uint8_t b;
                     ring_pop(&dev_rx[sel], &b);
                     uregs[sel].ififo[uregs[sel].ifsz++] = b;
                     uregs[sel].rx_timeout_enabled = true;
                     uregs[sel].rx_timeout = 4 * (2 + uregs[sel].lcr_word_length_bits + uregs[sel].lcr_stb + uregs[sel].lcr_pen);
-                } else {
+                    uregs[sel].ibyte_bits_remain = 2 + uregs[sel].lcr_word_length_bits + uregs[sel].lcr_stb + uregs[sel].lcr_pen;
+                } else if (!uregs[sel].fcr_fifo_enable) {
+                    // 16450 (no FIFO) mode: the single-byte holding
+                    // register is overwritten by the newest byte when
+                    // software doesn't keep up -- genuine, unavoidable
+                    // data loss on real hardware with no FIFO, so match
+                    // it here.
+                    uint8_t b;
                     uregs[sel].lsr_oe = true;
-                    if (ring_pop(&dev_rx[sel], &b) && !uregs[sel].fcr_fifo_enable && uregs[sel].ifsz > 0) {
-                        uregs[sel].ififo[uregs[sel].ifsz - 1] = b;
-                    }
+                    ring_pop(&dev_rx[sel], &b);
+                    uregs[sel].ififo[0] = b;
+                    uregs[sel].ibyte_bits_remain = 2 + uregs[sel].lcr_word_length_bits + uregs[sel].lcr_stb + uregs[sel].lcr_pen;
                 }
-                uregs[sel].ibyte_bits_remain = 2 + uregs[sel].lcr_word_length_bits + uregs[sel].lcr_stb + uregs[sel].lcr_pen;
+                // else: the 16-byte hardware FIFO is full and FIFO mode
+                // is enabled. Unlike a real 16550, this emulation has no
+                // reason to ever actually lose data the CPU just hasn't
+                // read yet: leave the byte queued in dev_rx (a much
+                // larger staging buffer) and don't consume a byte-time
+                // slot, so the transfer just retries once the CPU frees
+                // a FIFO slot via wifi_dequeue_ibyte(). Previously this
+                // branch popped and silently discarded the byte, which
+                // truncated any response longer than 16 bytes whenever
+                // the CPU hadn't started reading yet -- exactly the bug
+                // that broke DESK COMMANDER's Wi-Fi scan/detect replies.
             }
 
             uregs[sel].clock += 0x1000000LL;
@@ -886,30 +903,36 @@ static void zm_do_online(void)
     zm_result("NO CARRIER", 3);
 }
 
+// The emulated card has no real radio to scan with, but the host machine
+// it's running on already has whatever real network connection it has.
+// Rather than shelling out to the host OS to sniff the real SSID (a
+// blocking subprocess call in the emulator's hot path, with fragile
+// platform-specific parsing), report one fixed, always-available
+// synthetic access point that stands in for "you're already online
+// through the host." Joining it always succeeds, since the underlying
+// connectivity is already real.
+#define ZM_VIRTUAL_SSID "X16-EMULATOR-NET"
+
 static void zm_do_wifi(const char *args)
 {
     if (*args == '"') {
-        // Join: ATW"SSID,PASSWORD". We don't have a real radio to
-        // associate with, but the host already has real connectivity,
-        // so any well-formed join request succeeds.
+        // Join: ATW"SSID,PASSWORD". Any well-formed join request
+        // succeeds, regardless of which SSID/password were given.
         zm_wifi_joined = true;
         zm_result("OK", 0);
         return;
     }
     if (isdigit((unsigned char)*args)) {
-        // Scan: ATW<n> (Zimodem's Wi-Fi scan trigger). There's no real
-        // radio behind this emulation, so report a few representative
-        // access points in Zimodem's "SSID (rssi)" line format, which is
-        // what scan-driven UIs (e.g. DESK COMMANDER's Network Setup)
-        // parse looking for a trailing " (" marker before the RSSI.
-        zm_emit("\r\nHOST-NETWORK (-40)*\r\n");
-        zm_emit("\r\nGUEST-WIFI (-58)\r\n");
-        zm_emit("\r\nNEIGHBOR-5G (-71)\r\n");
+        // Scan: ATW<n> (Zimodem's Wi-Fi scan trigger). Format matches
+        // Zimodem's "SSID (rssi)" line, which is what scan-driven UIs
+        // (e.g. DESK COMMANDER's Network Setup) parse looking for a
+        // trailing " (" marker before the RSSI.
+        zm_emit("\r\n" ZM_VIRTUAL_SSID " (-40)*\r\n");
         zm_result("OK", 0);
         return;
     }
     // Bare "ATW": list networks the same way as a scan.
-    zm_emit("\r\n+WIFI: \"HOST-NETWORK\",-40\r\n");
+    zm_emit("\r\n+WIFI: \"" ZM_VIRTUAL_SSID "\",-40\r\n");
     zm_result("OK", 0);
 }
 
