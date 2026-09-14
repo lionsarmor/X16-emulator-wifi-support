@@ -617,6 +617,7 @@ static int zm_cmdlen = 0;
 static bool zm_echo = true;
 static bool zm_verbose = true;
 static bool zm_telnet_mode = false;
+static bool zm_wifi_joined = false; // set by ATW"ssid,pass", cleared by ATH/ATZ
 
 #if WIFI_HAVE_SOCKETS
 static int64_t zm_dial_start_cycle = 0;
@@ -731,6 +732,7 @@ static void zm_do_reset(void)
     zm_verbose = true;
     zm_telnet_mode = false;
     zm_esc_count = 0;
+    zm_wifi_joined = false;
 }
 
 static void zm_do_hangup(void)
@@ -745,6 +747,10 @@ static void zm_do_hangup(void)
 #endif
     zm_state = ZM_COMMAND;
     zm_esc_count = 0;
+    // Real Zimodem's ATH only closes sockets, but every known X16 client
+    // (including DESK COMMANDER) treats "hang up" as "go offline", and
+    // expects a later ATI2 to agree. Clear the join state to match.
+    zm_wifi_joined = false;
 }
 
 // Parses the "PTEXS" modifier letters Zimodem allows between the
@@ -882,13 +888,28 @@ static void zm_do_online(void)
 
 static void zm_do_wifi(const char *args)
 {
-    if (*args == 0) {
-        // "List networks": we're always bridged through the host's
-        // real network connection, so report a single synthetic AP.
-        zm_emit("\r\n+WIFI: \"HOST-NETWORK\",-40\r\n");
+    if (*args == '"') {
+        // Join: ATW"SSID,PASSWORD". We don't have a real radio to
+        // associate with, but the host already has real connectivity,
+        // so any well-formed join request succeeds.
+        zm_wifi_joined = true;
+        zm_result("OK", 0);
+        return;
     }
-    // Whether listing or joining a specific SSID, we're already
-    // "online" via the host, so just confirm success.
+    if (isdigit((unsigned char)*args)) {
+        // Scan: ATW<n> (Zimodem's Wi-Fi scan trigger). There's no real
+        // radio behind this emulation, so report a few representative
+        // access points in Zimodem's "SSID (rssi)" line format, which is
+        // what scan-driven UIs (e.g. DESK COMMANDER's Network Setup)
+        // parse looking for a trailing " (" marker before the RSSI.
+        zm_emit("\r\nHOST-NETWORK (-40)*\r\n");
+        zm_emit("\r\nGUEST-WIFI (-58)\r\n");
+        zm_emit("\r\nNEIGHBOR-5G (-71)\r\n");
+        zm_result("OK", 0);
+        return;
+    }
+    // Bare "ATW": list networks the same way as a scan.
+    zm_emit("\r\n+WIFI: \"HOST-NETWORK\",-40\r\n");
     zm_result("OK", 0);
 }
 
@@ -944,14 +965,40 @@ static void zm_process_command(const char *line)
                 p++;
                 zm_do_online();
                 return;
-            case 'I':
+            case 'I': {
                 p++;
-                while (isdigit((unsigned char)*p)) { p++; }
-                zm_emit("\r\nCommander X16 Emulated ESP32 WiFi Network Card\r\n");
+                int info_num = -1;
+                if (isdigit((unsigned char)*p)) {
+                    info_num = 0;
+                    while (isdigit((unsigned char)*p)) {
+                        info_num = info_num * 10 + (*p - '0');
+                        p++;
+                    }
+                }
+                if (info_num == 2) {
+                    // Zimodem's ATI2: current local IP, used by real-world
+                    // clients (e.g. DESK COMMANDER) to confirm DHCP actually
+                    // produced a usable address after a join.
+                    zm_emit(zm_wifi_joined ? "\r\n192.168.4.42\r\n" : "\r\n0.0.0.0\r\n");
+                } else {
+                    zm_emit("\r\nCommander X16 Emulated ESP32 WiFi Network Card\r\n");
+                }
                 break;
+            }
             case 'B':
                 p++;
                 while (isdigit((unsigned char)*p)) { p++; } // baud value accepted, no functional effect
+                break;
+            case 'Q':
+            case 'X':
+            case 'F':
+            case 'R':
+                // Quiet mode / extended result codes / flow-control framing /
+                // raw-passthrough mode selectors: accepted syntactically (so
+                // real Zimodem startup strings like "Q0V1X1F0R1" don't get
+                // rejected) but don't change this emulation's behavior.
+                p++;
+                while (isdigit((unsigned char)*p)) { p++; }
                 break;
             case '&':
                 p++;
@@ -1242,6 +1289,7 @@ static void zm_reset_engine(void)
     zm_verbose = true;
     zm_telnet_mode = false;
     zm_esc_count = 0;
+    zm_wifi_joined = false;
     zm_txlen = 0;
     zm_telnet_st = 0;
     zm_last_data_byte_cycle = -1000000000LL;
