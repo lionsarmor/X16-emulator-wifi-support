@@ -67,6 +67,7 @@
     #include <sys/socket.h>
     #include <sys/select.h>
     #include <sys/time.h>
+    #include <sys/wait.h>
     #include <netinet/in.h>
     #include <netinet/tcp.h>
     #include <arpa/inet.h>
@@ -936,6 +937,171 @@ static void zm_do_wifi(const char *args)
     zm_result("OK", 0);
 }
 
+#if WIFI_HAVE_SOCKETS
+// Performs a plain HTTP(S) GET and returns the response body (headers
+// stripped). Real TLS is delegated to the "curl" command-line tool rather
+// than embedding a TLS stack in the emulator -- curl ships on effectively
+// every Linux distro and macOS, and on Windows 10 1803+ -- so this covers
+// real-world use without a large new dependency. Bounded by a timeout so
+// an unreachable backend can't hang the emulator forever; still a blocking
+// call, which is acceptable here because it only runs once per explicit,
+// user-initiated AT&G command (e.g. a chat app's "send message" button),
+// unlike the per-tick network polling path.
+// Writes a curl config-file directive for `url`, quoted and escaped per
+// curl's own config-file syntax (backslash-escaping '\' and '"'). The URL
+// never appears on a command line or is interpolated into any shell/cmd
+// string on either platform -- it travels only through this file/pipe
+// content, which curl's own config parser reads, so there is no command
+// injection surface here regardless of what the URL contains.
+static void zm_write_curl_config(FILE *fp, const char *url)
+{
+    fputs("url = \"", fp);
+    for (const char *p = url; *p; p++) {
+        if (*p == '\\' || *p == '"') {
+            fputc('\\', fp);
+        }
+        fputc(*p, fp);
+    }
+    fputs("\"\n", fp);
+}
+
+static bool zm_http_get(const char *url, uint8_t *out_buf, int out_cap, int *out_len)
+{
+    *out_len = 0;
+#ifdef _WIN32
+    char *tmppath = _tempnam(NULL, "x16wifi");
+    if (!tmppath) {
+        return false;
+    }
+    FILE *cfg = fopen(tmppath, "w");
+    if (!cfg) {
+        free(tmppath);
+        return false;
+    }
+    zm_write_curl_config(cfg, url);
+    fclose(cfg);
+
+    // The command line below is a fixed constant plus a system-generated
+    // temp file path -- never the URL itself -- so there's nothing for a
+    // guest-supplied URL to inject into.
+    char cmdline[600];
+    snprintf(cmdline, sizeof(cmdline), "curl -s -S --max-time 15 -K \"%s\"", tmppath);
+    FILE *fp = _popen(cmdline, "r");
+    bool ok = false;
+    if (fp) {
+        int total = (int)fread(out_buf, 1, (size_t)out_cap, fp);
+        int rc = _pclose(fp);
+        *out_len = total;
+        ok = (rc == 0 && total > 0);
+    }
+    remove(tmppath);
+    free(tmppath);
+    return ok;
+#else
+    // POSIX: write the URL to curl via a config file passed through a
+    // pipe on curl's stdin (-K -), and exec curl directly with a fixed
+    // argv array -- no shell involved, and the URL never touches a
+    // command line or argv, so there is no injection surface regardless
+    // of its contents.
+    int inpipe[2];
+    int outpipe[2];
+    if (pipe(inpipe) != 0) {
+        return false;
+    }
+    if (pipe(outpipe) != 0) {
+        close(inpipe[0]);
+        close(inpipe[1]);
+        return false;
+    }
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(inpipe[0]);
+        close(inpipe[1]);
+        close(outpipe[0]);
+        close(outpipe[1]);
+        return false;
+    }
+    if (pid == 0) {
+        dup2(inpipe[0], STDIN_FILENO);
+        dup2(outpipe[1], STDOUT_FILENO);
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        close(inpipe[0]);
+        close(inpipe[1]);
+        close(outpipe[0]);
+        close(outpipe[1]);
+        execlp("curl", "curl", "-s", "-S", "--max-time", "15", "-K", "-", (char *)NULL);
+        _exit(127); // only reached if curl isn't installed
+    }
+    close(inpipe[0]);
+    close(outpipe[1]);
+
+    FILE *cfgw = fdopen(inpipe[1], "w");
+    if (cfgw) {
+        zm_write_curl_config(cfgw, url);
+        fclose(cfgw); // also closes inpipe[1], signaling EOF to curl's stdin
+    } else {
+        close(inpipe[1]);
+    }
+
+    int total = 0;
+    while (total < out_cap) {
+        ssize_t n = read(outpipe[0], out_buf + total, (size_t)(out_cap - total));
+        if (n <= 0) {
+            break;
+        }
+        total += (int)n;
+    }
+    close(outpipe[0]);
+    int status = 0;
+    waitpid(pid, &status, 0);
+    *out_len = total;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0 && total > 0;
+#endif
+}
+#endif
+
+static void zm_do_http_get(const char *args)
+{
+    if (*args != '"') {
+        zm_result("ERROR", 4);
+        return;
+    }
+    args++;
+    char url[600];
+    int n = 0;
+    while (*args && *args != '"' && n < (int)sizeof(url) - 1) {
+        url[n++] = *args++;
+    }
+    url[n] = 0;
+    if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
+        zm_result("ERROR", 4);
+        return;
+    }
+#if WIFI_HAVE_SOCKETS
+    static uint8_t body[8192];
+    int len = 0;
+    bool ok = zm_http_get(url, body, (int)sizeof(body), &len);
+    if (!ok) {
+        zm_result("NO CARRIER", 3);
+        return;
+    }
+    for (int i = 0; i < len; i++) {
+        if (!ring_push(&dev_rx[0], body[i])) {
+            uregs[0].lsr_oe = true;
+            break;
+        }
+    }
+    zm_result("OK", 0);
+#else
+    (void)url;
+    zm_result("ERROR", 4);
+#endif
+}
+
 static bool starts_with_at(const char *s)
 {
     return (s[0] == 'A' || s[0] == 'a') && (s[1] == 'T' || s[1] == 't');
@@ -1023,11 +1189,22 @@ static void zm_process_command(const char *line)
                 p++;
                 while (isdigit((unsigned char)*p)) { p++; }
                 break;
-            case '&':
+            case '&': {
                 p++;
-                if (*p) { p++; } // consume one option letter (e.g. &W, &F): accepted as a no-op
+                char amp_opt = (char)toupper((unsigned char)*p);
+                if (amp_opt == 'G') {
+                    // AT&G"<url>": Zimodem's raw HTTP(S) GET extension --
+                    // used by real X16 clients (e.g. DESK COMMANDER's
+                    // Comms app) to talk to a plain web backend without
+                    // implementing HTTP/TLS on the 6502 side.
+                    p++;
+                    zm_do_http_get(p);
+                    return;
+                }
+                if (*p) { p++; } // consume one other option letter (e.g. &W, &F): no-op
                 while (isdigit((unsigned char)*p)) { p++; }
                 break;
+            }
             case 'S':
                 p++;
                 while (isdigit((unsigned char)*p)) { p++; }
