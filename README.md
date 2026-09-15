@@ -106,6 +106,14 @@ tool, which needs to be on your system `PATH` at runtime. It ships by default on
 essentially every Linux distribution, macOS, and Windows 10 (1803+); nothing else
 is required.
 
+## Exporting an app to Linux, Windows, and real hardware
+
+`tools/bundle-x16-app.sh` takes any built X16 app and packages it into a
+single zip with a double-click launcher for Linux and Windows (this fork's
+Wi-Fi emulator bundled in, self-contained) plus a ready-to-copy folder for
+real X16 hardware with a real ESP32 WiFi card. See [`EXPORTING.md`](EXPORTING.md)
+for the full how-to.
+
 ## Known limitations
 
 These are deliberate scope decisions, not oversights — see the comment header in
