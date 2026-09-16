@@ -11,3 +11,8 @@ local.properties
 /app/build/
 /app/.cxx/
 /build/
+
+# Staged per-app files, written by bundle-app-android.sh at build time -
+# not part of the generic template.
+/app/src/main/assets/app/
+/app/src/main/assets/launcher.cfg

@@ -43,6 +43,19 @@ debug build is at `~/x16-bundles/android-dev/X16-Emulator-WiFi-debug.apk`;
 install it on a phone with `adb install X16-Emulator-WiFi-debug.apk` (or
 just copy it over and open it) to find out.
 
+- **Per-app bundling works, matching the Linux/Windows bundler.**
+  `android/bundle-app-android.sh --name "DESK COMMANDER" --prg DCMAIN.PRG --sdcard /path/to/dist/sdcard`
+  produces a dedicated APK that boots straight into that one app, no
+  picker, the same way `tools/bundle-x16-app.sh` does for Linux/Windows.
+  Each app gets its own Android package ID (derived from its name, e.g.
+  `com.lionsarmor.x16wifi.deskcommander`, or set explicitly with
+  `--app-id`), so several bundled apps install side-by-side as distinct
+  apps instead of overwriting each other. Verified end-to-end for DESK
+  COMMANDER: correct package name, correct app label, its files present
+  under `assets/app/` in the built APK. The easiest way to use this is
+  through `tools/x16-publisher.py` (see [EXPORTING.md](EXPORTING.md)),
+  which wraps this script and the Linux/Windows one behind one GUI.
+
 ## Building it yourself
 
 ```sh
@@ -62,6 +75,11 @@ The native side is wired through `android/app/jni/src/CMakeLists.txt`,
 which points at `x16-emulator/src/` directly rather than a second copy —
 Android always builds from the exact same source as Linux and Windows.
 
+To bundle a specific app instead of the bare emulator, use
+`android/bundle-app-android.sh` (see above) rather than calling `gradlew`
+directly — it stages the app's files into `assets/app/` and sets the
+per-app build properties for you.
+
 ## What's not done yet
 
 This is a real, itemized list, not a vague disclaimer:
@@ -72,13 +90,6 @@ This is a real, itemized list, not a vague disclaimer:
   Android's own networking APIs via JNI) directly into `libmain.so`
   instead of spawning a subprocess — a change to `esp32wifi.c`, not just
   packaging.
-- **No app picker.** This APK boots straight to bare Commander BASIC with
-  an empty SD-card folder — it doesn't yet bundle or let you choose a
-  specific app like DESK COMMANDER the way `tools/bundle-x16-app.sh` does
-  for Linux/Windows. Extending that bundler to also produce an Android
-  variant (dropping the chosen app's files into `assets/` instead of
-  `rom.bin` alone) is the natural next step once the two items above are
-  sorted.
 - **Only arm64-v8a is built.** Covers the overwhelming majority of real
   phones sold in the last several years; add `armeabi-v7a` to
   `abiFilters` in `app/build.gradle` if you need older 32-bit devices too.

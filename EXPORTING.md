@@ -7,6 +7,27 @@ ESP32 WiFi card. One command in, one zip out.
 
 This covers how to use it, what it produces, and how to troubleshoot it.
 For how the Wi-Fi card itself works, see the main [README.md](README.md).
+For Android specifically (a separate script, `android/bundle-app-android.sh`,
+with its own considerations), see [ANDROID.md](ANDROID.md).
+
+## Prefer a GUI?
+
+`tools/x16-publisher.py` is a desktop app wrapping all of this — point it
+at an app folder, tick which platforms you want (Linux, Windows, Android),
+and click Publish. It calls the exact same scripts this document describes,
+streams their output live, and adds a couple of one-click extras: a
+"Test on this machine" button that launches a freshly built Linux bundle
+immediately, and an "Install to connected device" button that runs
+`adb install` when a phone is plugged in. No extra install needed — it's
+plain Python 3 with the Tkinter GUI toolkit already built in:
+
+```sh
+python3 tools/x16-publisher.py
+```
+
+The rest of this document explains what that GUI is doing under the hood,
+and is the reference for using the scripts directly (CI, automation,
+scripting your own release process, etc).
 
 ## Before you start
 
@@ -59,6 +80,7 @@ x16bundle --name "WEATHER COMMANDER" --prg WEATHER.PRG \
 | `--prg` | only if the app has no `AUTOBOOT.X16` | Which `.PRG` (relative to `--sdcard`) to load and `RUN`. If the app already autoboots itself, you can omit this. |
 | `--out` | no | Output directory. Defaults to `~/x16-bundles`. |
 | `--no-zip` | no | Leave the bundle as a plain folder instead of also zipping it. |
+| `--platforms` | no | Comma-separated subset of `linux,windows` to actually build. Defaults to both. `real-hardware/` is always included either way — it's just a file copy, not a build. |
 
 Run `tools/bundle-x16-app.sh --help` any time for the same reference.
 
