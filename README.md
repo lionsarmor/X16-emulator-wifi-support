@@ -56,9 +56,10 @@ notes — every design decision is explained inline).
   - `ATI2` — reports a real-looking local IP once joined, `0.0.0.0` otherwise, for
     software that checks connection status this way.
   - `AT&G"http(s)://..."` — Zimodem's raw HTTP(S) GET extension. Performs a real
-    request (via `curl`, so TLS is handled properly) and returns the response body
-    over the UART, letting 6502 code talk to a web API without implementing HTTP
-    or TLS itself.
+    request (via `curl` on desktop, so TLS is handled properly; via Android's own
+    `HttpURLConnection` on Android, where there's no `curl` binary to shell out
+    to) and returns the response body over the UART, letting 6502 code talk to a
+    web API without implementing HTTP or TLS itself.
   - Plus `ATE`, `ATV`, `ATZ`, `ATI`, `ATB`, `ATQ`/`ATX`/`ATF`/`ATR`, `AT&W`/`AT&`*,
     and `ATSn` for echo/verbosity/reset/info/baud/quiet/extended-results/save/
     S-register compatibility with real startup strings.
@@ -122,9 +123,11 @@ binary — grab the latest release from
 bundled here, matching upstream's own practice.
 
 The WiFi card's HTTP(S) support (`AT&G`) shells out to the `curl` command-line
-tool, which needs to be on your system `PATH` at runtime. It ships by default on
-essentially every Linux distribution, macOS, and Windows 10 (1803+); nothing else
-is required.
+tool on Linux, Windows, and macOS, which needs to be on your system `PATH` at
+runtime. It ships by default on essentially every Linux distribution, macOS,
+and Windows 10 (1803+); nothing else is required. Android doesn't need `curl`
+at all — it uses Android's own `HttpURLConnection` instead (see
+[`ANDROID.md`](ANDROID.md)).
 
 ## Exporting an app to Linux, Windows, and real hardware
 
@@ -140,10 +143,12 @@ This fork's emulator core also cross-compiles into a real installable
 Android APK (arm64-v8a, current ROM and SDL2, not a stale port), with a
 full on-screen keyboard - every key a real X16 keyboard has, not just
 plain typing - toggled by an icon drawn by the emulator itself (see
-"On-screen keyboard" below; it's cross-platform, not Android-only). It's
-still early on Android specifically — the WiFi card's `AT&G` HTTP fetch
-needs a rework to not depend on a `curl` binary, and there's no bundled
-app picker yet. See [`ANDROID.md`](ANDROID.md) for what's proven working, what
+"On-screen keyboard" below; it's cross-platform, not Android-only). The
+WiFi card's `AT&G` HTTP(S) fetch works on Android too, through Android's
+own `HttpURLConnection` via JNI instead of the `curl` binary desktop
+builds use, and `android/bundle-app-android.sh` bundles a specific app
+into its own dedicated, installable APK the same way the Linux/Windows
+bundler does. See [`ANDROID.md`](ANDROID.md) for what's proven working, what
 isn't yet, and how to build it.
 
 ## Known limitations

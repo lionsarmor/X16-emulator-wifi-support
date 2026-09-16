@@ -22,6 +22,19 @@ before expecting a finished app.
   instead of a shell command line.
 - `INTERNET` and `ACCESS_NETWORK_STATE` permissions are declared, which
   Android requires before any socket the WiFi card opens will work at all.
+- **`AT&G` (the WiFi card's HTTP(S) GET) works on Android now, through a
+  real fix, not a stub.** Desktop builds shell out to `curl`; there's no
+  such binary inside an app's sandbox, so `zm_http_get` in `esp32wifi.c`
+  now branches on `__ANDROID__` to call Android's own `HttpURLConnection`
+  instead, through a small JNI bridge
+  (`android/app/src/main/java/com/lionsarmor/x16wifi/HttpBridge.java`).
+  This also means Android gets its TLS/CA trust store from the OS itself,
+  not a vendored copy that would go stale. Verified as far as this machine
+  can without a device: the native code and the Java method agree exactly
+  on the JNI contract (class path, method name, `(Ljava/lang/String;I)[B`
+  signature) confirmed by disassembling the actual compiled `.dex`, not
+  just by reading the source. Not yet confirmed making a real network
+  request on an actual device.
 - A full on-screen keyboard is built into the emulator itself (`x16-emulator/src/osk.c`),
   not just a system IME popup. A small keyboard icon is always drawn in the
   top-right corner; tapping it shows the complete X16 key layout - every
@@ -84,12 +97,6 @@ per-app build properties for you.
 
 This is a real, itemized list, not a vague disclaimer:
 
-- **`AT&G` (the WiFi card's HTTP fetch) won't work yet.** It currently
-  shells out to the `curl` command-line tool, which doesn't exist inside
-  Android's app sandbox. The real fix is linking libcurl (or using
-  Android's own networking APIs via JNI) directly into `libmain.so`
-  instead of spawning a subprocess — a change to `esp32wifi.c`, not just
-  packaging.
 - **Only arm64-v8a is built.** Covers the overwhelming majority of real
   phones sold in the last several years; add `armeabi-v7a` to
   `abiFilters` in `app/build.gradle` if you need older 32-bit devices too.

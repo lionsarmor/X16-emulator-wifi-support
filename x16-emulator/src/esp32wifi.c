@@ -84,6 +84,14 @@
   #endif
 #endif
 
+#ifdef __ANDROID__
+  // AT&G's HTTP(S) GET goes through Android's own HttpURLConnection via
+  // JNI on this platform instead of shelling out to curl (see zm_http_get
+  // below) -- there's no curl binary inside an app's sandbox.
+  #include <jni.h>
+  #include <SDL.h>
+#endif
+
 // ---------------------------------------------------------------------
 // Small ring buffer used to stage bytes destined for a UART's receive
 // FIFO (ififo). Bytes sit here until the UART's own baud-rate timing
@@ -939,14 +947,72 @@ static void zm_do_wifi(const char *args)
 
 #if WIFI_HAVE_SOCKETS
 // Performs a plain HTTP(S) GET and returns the response body (headers
-// stripped). Real TLS is delegated to the "curl" command-line tool rather
-// than embedding a TLS stack in the emulator -- curl ships on effectively
-// every Linux distro and macOS, and on Windows 10 1803+ -- so this covers
-// real-world use without a large new dependency. Bounded by a timeout so
-// an unreachable backend can't hang the emulator forever; still a blocking
-// call, which is acceptable here because it only runs once per explicit,
-// user-initiated AT&G command (e.g. a chat app's "send message" button),
-// unlike the per-tick network polling path.
+// stripped). Bounded by a timeout so an unreachable backend can't hang the
+// emulator forever; still a blocking call, which is acceptable here
+// because it only runs once per explicit, user-initiated AT&G command
+// (e.g. a chat app's "send message" button), unlike the per-tick network
+// polling path.
+//
+// Real TLS comes from two different places depending on platform:
+//   - Android: Android's own HttpURLConnection, called via JNI (see
+//     zm_http_get_jni below and android/app/src/main/java/com/lionsarmor/x16wifi/HttpBridge.java).
+//     There's no curl binary inside an app's sandbox to shell out to, and
+//     the platform's own, already-current CA trust store is a better fit
+//     here than vendoring a TLS library and certificate bundle.
+//   - Everywhere else: the "curl" command-line tool -- curl ships on
+//     effectively every Linux distro and macOS, and on Windows 10
+//     1803+ -- so this covers real-world use without a large new
+//     dependency.
+
+#ifdef __ANDROID__
+
+// JNI plumbing for the Android path. SDL_AndroidGetJNIEnv() hands back a
+// JNIEnv valid for the calling thread (attaching it to the JVM first if
+// this isn't the app's main thread), so this works regardless of which
+// emulator thread issues the AT&G command.
+static bool zm_http_get_jni(const char *url, uint8_t *out_buf, int out_cap, int *out_len)
+{
+    *out_len = 0;
+    JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+    if (!env) {
+        return false;
+    }
+
+    jclass cls = (*env)->FindClass(env, "com/lionsarmor/x16wifi/HttpBridge");
+    if (!cls) {
+        (*env)->ExceptionClear(env);
+        return false;
+    }
+    jmethodID mid = (*env)->GetStaticMethodID(env, cls, "httpGet", "(Ljava/lang/String;I)[B");
+    if (!mid) {
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, cls);
+        return false;
+    }
+
+    jstring jurl = (*env)->NewStringUTF(env, url);
+    jbyteArray result = (jbyteArray)(*env)->CallStaticObjectMethod(env, cls, mid, jurl, (jint)15000);
+
+    bool ok = false;
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    } else if (result) {
+        jsize len = (*env)->GetArrayLength(env, result);
+        int copy_len = ((int)len < out_cap) ? (int)len : out_cap;
+        if (copy_len > 0) {
+            (*env)->GetByteArrayRegion(env, result, 0, copy_len, (jbyte *)out_buf);
+        }
+        *out_len = copy_len;
+        ok = copy_len > 0;
+        (*env)->DeleteLocalRef(env, result);
+    }
+    (*env)->DeleteLocalRef(env, jurl);
+    (*env)->DeleteLocalRef(env, cls);
+    return ok;
+}
+
+#else // !__ANDROID__
+
 // Writes a curl config-file directive for `url`, quoted and escaped per
 // curl's own config-file syntax (backslash-escaping '\' and '"'). The URL
 // never appears on a command line or is interpolated into any shell/cmd
@@ -965,10 +1031,14 @@ static void zm_write_curl_config(FILE *fp, const char *url)
     fputs("\"\n", fp);
 }
 
+#endif // !__ANDROID__
+
 static bool zm_http_get(const char *url, uint8_t *out_buf, int out_cap, int *out_len)
 {
     *out_len = 0;
-#ifdef _WIN32
+#ifdef __ANDROID__
+    return zm_http_get_jni(url, out_buf, out_cap, out_len);
+#elif defined(_WIN32)
     char *tmppath = _tempnam(NULL, "x16wifi");
     if (!tmppath) {
         return false;
