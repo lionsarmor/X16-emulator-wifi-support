@@ -114,6 +114,14 @@ Wi-Fi emulator bundled in, self-contained) plus a ready-to-copy folder for
 real X16 hardware with a real ESP32 WiFi card. See [`EXPORTING.md`](EXPORTING.md)
 for the full how-to.
 
+## Android
+
+This fork's emulator core also cross-compiles into a real installable
+Android APK (arm64-v8a, current ROM and SDL2, not a stale port). It's
+early — no on-screen keyboard yet, and the WiFi card's `AT&G` HTTP fetch
+needs a rework to not depend on a `curl` binary. See [`ANDROID.md`](ANDROID.md)
+for what's proven working, what isn't yet, and how to build it.
+
 ## Known limitations
 
 These are deliberate scope decisions, not oversights — see the comment header in

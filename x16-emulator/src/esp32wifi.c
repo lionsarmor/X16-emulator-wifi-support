@@ -39,7 +39,7 @@
 
 #include "glue.h"
 #include "esp32wifi.h"
-#include "endian.h"
+#include "x16_endian.h"
 
 #if defined(__EMSCRIPTEN__)
   // Real TCP sockets aren't available in the browser sandbox this

@@ -7,7 +7,7 @@
 #include "glue.h"
 #include "midi.h"
 #include "audio.h"
-#include "endian.h"
+#include "x16_endian.h"
 
 #ifdef _WIN32
     #include <windows.h>

@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "../endian.h"
+#include "../x16_endian.h"
 
 #define FLAG_CARRY     0x01
 #define FLAG_ZERO      0x02
