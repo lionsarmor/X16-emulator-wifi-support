@@ -35,6 +35,7 @@ add_library(main SHARED
     ${X16_SRC}/javascript_interface.c
     ${X16_SRC}/joystick.c
     ${X16_SRC}/rendertext.c
+    ${X16_SRC}/osk.c
     ${X16_SRC}/keyboard.c
     ${X16_SRC}/icon.c
     ${X16_SRC}/timing.c

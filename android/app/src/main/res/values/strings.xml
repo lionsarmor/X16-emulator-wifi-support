@@ -1,3 +1,5 @@
 <resources>
-    <string name="app_name">X16 Emulator (WiFi)</string>
+    <!-- app_name is injected at build time via the resValue in build.gradle
+         (defaults to "X16 Emulator (WiFi)", overridable with -PxAppLabel=...)
+         so each bundled app can show its own name without editing this file. -->
 </resources>

@@ -191,6 +191,7 @@ set(X16_SOURCES
     src/javascript_interface.c
     src/joystick.c
     src/rendertext.c
+    src/osk.c
     src/keyboard.c
     src/icon.c
     src/timing.c

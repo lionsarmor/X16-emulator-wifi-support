@@ -13,6 +13,7 @@
 #include "glue.h"
 #include "debugger.h"
 #include "keyboard.h"
+#include "osk.h"
 #include "gif.h"
 #include "joystick.h"
 #include "vera_spi.h"
@@ -339,15 +340,12 @@ video_init(int window_scale, float screen_x_scale, char *quality, bool fullscree
 									SDL_TEXTUREACCESS_STREAMING,
 									SCREEN_WIDTH, SCREEN_HEIGHT);
 
-#ifdef __ANDROID__
-	// There's no physical keyboard on a phone/tablet. SDL's Android backend
-	// will show the system's on-screen keyboard and translate what's typed
-	// into real SDL_KEYDOWN/KEYUP events (letters, digits, backspace,
-	// enter) - but only once something calls SDL_StartTextInput(). Desktop
-	// builds never need to call this (a real keyboard just works), so
-	// nothing here ever did until now.
-	SDL_StartTextInput();
-#endif
+	// The on-screen keyboard (osk.c) is the one keyboard UI across every
+	// platform: a toggle icon shows/hides a full key layout drawn by the
+	// emulator itself. It's initialized unconditionally, not just on
+	// Android - Linux/Windows get the same toggle too, for touchscreens
+	// and for testing it without needing a phone.
+	osk_init();
 
 	SDL_SetWindowTitle(window, WINDOW_TITLE);
 	SDL_SetWindowIcon(window, CommanderX16Icon());
@@ -1388,14 +1386,28 @@ video_update()
 
 	if (debugger_enabled && showDebugOnRender != 0) {
 		DEBUGRenderDisplay(SCREEN_WIDTH, SCREEN_HEIGHT);
+		{
+			int logical_w, logical_h;
+			SDL_RenderGetLogicalSize(renderer, &logical_w, &logical_h);
+			osk_render(renderer, logical_w, logical_h);
+		}
 		SDL_RenderPresent(renderer);
 		return true;
+	}
+
+	{
+		int logical_w, logical_h;
+		SDL_RenderGetLogicalSize(renderer, &logical_w, &logical_h);
+		osk_render(renderer, logical_w, logical_h);
 	}
 
 	SDL_RenderPresent(renderer);
 
 	SDL_Event event;
 	while (SDL_PollEvent(&event)) {
+		if (osk_handle_event(renderer, window, &event)) {
+			continue;
+		}
 		if (event.type == SDL_QUIT) {
 			return false;
 		}

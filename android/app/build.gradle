@@ -13,11 +13,15 @@ android {
     }
     compileSdkVersion 34
     defaultConfig {
-        applicationId "com.lionsarmor.x16wifi"
+        // Overridable per build so different bundled X16 apps install
+        // side-by-side as distinct Android apps instead of overwriting each
+        // other: ./gradlew assembleDebug -PxAppId=com.example.myapp -PxAppLabel="My App"
+        applicationId project.findProperty('xAppId') ?: "com.lionsarmor.x16wifi"
         minSdkVersion 24
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"
+        resValue "string", "app_name", (project.findProperty('xAppLabel') ?: "X16 Emulator (WiFi)").toString()
         externalNativeBuild {
             // cmake, not ndkBuild: matches how the Linux/Windows builds in
             // this fork are built, and lets the native side share the same

@@ -22,14 +22,20 @@ before expecting a finished app.
   instead of a shell command line.
 - `INTERNET` and `ACCESS_NETWORK_STATE` permissions are declared, which
   Android requires before any socket the WiFi card opens will work at all.
-- The system's on-screen keyboard now appears and can type into the
-  emulator. The fix was a single `SDL_StartTextInput()` call added to
-  `x16-emulator/src/video.c` (Android-only, guarded by `#ifdef __ANDROID__`):
-  SDL2's Android backend already translates typed characters into real
-  `SDL_KEYDOWN`/`SDL_KEYUP` events (see `SDLInputConnection.commitText()`
-  in `SDLActivity.java`, which calls `nativeGenerateScancodeForUnichar()`
-  per character, plus real key events for Enter and backspace) — desktop
-  builds simply never call the one function that tells Android to show it.
+- A full on-screen keyboard is built into the emulator itself (`x16-emulator/src/osk.c`),
+  not just a system IME popup. A small keyboard icon is always drawn in the
+  top-right corner; tapping it shows the complete X16 key layout - every
+  letter, digit, F1-F8, arrow keys, TAB, RUN/STOP, RESTORE, Shift, and
+  Ctrl - across the bottom of the screen, and tapping it again hides it.
+  Regular keys send a real keydown on finger-down and keyup on finger-up
+  (so KERNAL key-repeat works normally); Shift/Ctrl latch on tap instead of
+  needing to be held; RESTORE fires the same NMI real hardware wires it to.
+  This draws with the emulator's own renderer, so it's identical on Linux,
+  Windows, and Android alike - see the main [README.md](README.md) for how
+  it's exercised on desktop too. Verified visually end-to-end on Linux
+  (toggle, full layout, and Shift's highlight all confirmed by screenshot);
+  the Android build compiles and packages the same code, but hasn't been
+  confirmed on an actual device yet.
 
 I do not have a device or emulator (AVD) attached to verify it visually
 boots to a `READY.` prompt — that's the next thing to actually check. A
@@ -60,15 +66,6 @@ Android always builds from the exact same source as Linux and Windows.
 
 This is a real, itemized list, not a vague disclaimer:
 
-- **On-screen keyboard covers typing, not the whole keyboard.** Letters,
-  digits, space, backspace, and enter now come through the system IME
-  (see above) — likely enough for plain BASIC use. But arrow keys,
-  function keys, ESC, and modifier combos (Ctrl/Shift shortcuts, RUN/STOP,
-  RESTORE) have no equivalent on a glass keyboard; no IME sends them. X16
-  software that leans on those, including this fork's own DESK COMMANDER
-  and WEATHER COMMANDER, will still need either a Bluetooth/USB keyboard
-  or a future custom on-screen overlay with dedicated buttons for those
-  keys mapped to SDL scancodes.
 - **`AT&G` (the WiFi card's HTTP fetch) won't work yet.** It currently
   shells out to the `curl` command-line tool, which doesn't exist inside
   Android's app sandbox. The real fix is linking libcurl (or using

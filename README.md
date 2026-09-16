@@ -84,6 +84,26 @@ somewhere in the `$9Fxx` I/O page):
 
 Run `./x16emu -help` and look for `-wifi` for the full flag description.
 
+## On-screen keyboard
+
+A small keyboard icon is always drawn in the top-right corner of the
+emulator window, on every platform (Linux, Windows, and Android alike,
+since it's drawn by the emulator's own renderer, not anything OS-specific).
+Click or tap it to show a full X16 key layout across the bottom of the
+screen — every letter, digit, F1-F8, arrow key, TAB, RUN/STOP, RESTORE,
+Shift, and Ctrl — and tap it again to hide it. This exists for touchscreens
+that have no physical keyboard at all (a phone, primarily), but works
+identically with a mouse on a normal desktop too.
+
+Regular keys behave like a real keypress held for exactly as long as you
+hold the on-screen button, including KERNAL key-repeat if you hold one
+down. Shift and Ctrl latch on tap instead, since holding two on-screen
+buttons down for a combo is awkward with touch — tap once to hold it,
+tap again to release. RESTORE triggers the same NMI real X16 hardware
+wires it to, not a scancode.
+
+See `x16-emulator/src/osk.c` for the implementation.
+
 ## Building
 
 Standard CMake build — see [`x16-emulator/README.md`](x16-emulator/README.md) and
@@ -118,10 +138,12 @@ for the full how-to.
 
 This fork's emulator core also cross-compiles into a real installable
 Android APK (arm64-v8a, current ROM and SDL2, not a stale port), with a
-working on-screen keyboard for basic typing. It's still early — no
-support yet for arrow/function keys without a Bluetooth keyboard, and the
-WiFi card's `AT&G` HTTP fetch needs a rework to not depend on a `curl`
-binary. See [`ANDROID.md`](ANDROID.md) for what's proven working, what
+full on-screen keyboard - every key a real X16 keyboard has, not just
+plain typing - toggled by an icon drawn by the emulator itself (see
+"On-screen keyboard" below; it's cross-platform, not Android-only). It's
+still early on Android specifically — the WiFi card's `AT&G` HTTP fetch
+needs a rework to not depend on a `curl` binary, and there's no bundled
+app picker yet. See [`ANDROID.md`](ANDROID.md) for what's proven working, what
 isn't yet, and how to build it.
 
 ## Known limitations

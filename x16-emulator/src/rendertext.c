@@ -194,6 +194,48 @@ void DEBUGWrite(SDL_Renderer *renderer, int x, int y, int ch, SDL_Color colour) 
 //
 // *******************************************************************************************
 
+void TextWritePixel(SDL_Renderer *renderer, int x, int y, int ch, SDL_Color colour, int scale) {
+	if (!textureInitialized) {
+		DEBUGInitChars(renderer);
+	}
+	if (ch < 0x20 || ch > 0x7F) {
+		ch = 0x20;
+	}
+	SDL_SetTextureColorMod(fontTexture, colour.r, colour.g, colour.b);
+	int glyph = ch - 0x20;
+	SDL_Rect srcRect = {
+		glyph * CHARACTER_WIDTH,
+		0,
+		CHARACTER_WIDTH,
+		CHARACTER_HEIGHT
+	};
+	SDL_Rect dstRect = {
+		x,
+		y,
+		CHARACTER_WIDTH * scale,
+		CHARACTER_HEIGHT * scale
+	};
+	SDL_RenderCopy(renderer, fontTexture, &srcRect, &dstRect);
+}
+
+int TextStringPixel(SDL_Renderer *renderer, int x, int y, const char *s, SDL_Color colour, int scale) {
+	int cursor = x;
+	while (*s != '\0') {
+		TextWritePixel(renderer, cursor, y, (unsigned char)*s, colour, scale);
+		cursor += (CHARACTER_WIDTH + 1) * scale;
+		s++;
+	}
+	return cursor - x;
+}
+
+int TextStringPixelWidth(const char *s, int scale) {
+	int len = (int)strlen(s);
+	if (len == 0) {
+		return 0;
+	}
+	return len * (CHARACTER_WIDTH + 1) * scale - scale;
+}
+
 void DEBUGString(SDL_Renderer *renderer, int x, int y, char *s, SDL_Color colour) {
 	while (*s != '\0') {
 		DEBUGWrite(renderer, x++, y, *s++, colour);
