@@ -339,6 +339,16 @@ video_init(int window_scale, float screen_x_scale, char *quality, bool fullscree
 									SDL_TEXTUREACCESS_STREAMING,
 									SCREEN_WIDTH, SCREEN_HEIGHT);
 
+#ifdef __ANDROID__
+	// There's no physical keyboard on a phone/tablet. SDL's Android backend
+	// will show the system's on-screen keyboard and translate what's typed
+	// into real SDL_KEYDOWN/KEYUP events (letters, digits, backspace,
+	// enter) - but only once something calls SDL_StartTextInput(). Desktop
+	// builds never need to call this (a real keyboard just works), so
+	// nothing here ever did until now.
+	SDL_StartTextInput();
+#endif
+
 	SDL_SetWindowTitle(window, WINDOW_TITLE);
 	SDL_SetWindowIcon(window, CommanderX16Icon());
 	if (fullscreen) {

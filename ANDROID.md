@@ -22,6 +22,14 @@ before expecting a finished app.
   instead of a shell command line.
 - `INTERNET` and `ACCESS_NETWORK_STATE` permissions are declared, which
   Android requires before any socket the WiFi card opens will work at all.
+- The system's on-screen keyboard now appears and can type into the
+  emulator. The fix was a single `SDL_StartTextInput()` call added to
+  `x16-emulator/src/video.c` (Android-only, guarded by `#ifdef __ANDROID__`):
+  SDL2's Android backend already translates typed characters into real
+  `SDL_KEYDOWN`/`SDL_KEYUP` events (see `SDLInputConnection.commitText()`
+  in `SDLActivity.java`, which calls `nativeGenerateScancodeForUnichar()`
+  per character, plus real key events for Enter and backspace) — desktop
+  builds simply never call the one function that tells Android to show it.
 
 I do not have a device or emulator (AVD) attached to verify it visually
 boots to a `READY.` prompt — that's the next thing to actually check. A
@@ -52,13 +60,15 @@ Android always builds from the exact same source as Linux and Windows.
 
 This is a real, itemized list, not a vague disclaimer:
 
-- **No on-screen keyboard.** SDL2's Android backend can bring up the
-  system IME for text input, but a lot of X16 software (this fork's own
-  DESK COMMANDER and WEATHER COMMANDER included) relies on real key events
-  — arrow keys, function keys, modifier combos — that a phone's glass
-  keyboard has no concept of. A usable touch build needs a custom on-screen
-  keyboard overlay mapped to SDL scancodes. Until then, this only works
-  well with a Bluetooth/USB keyboard attached.
+- **On-screen keyboard covers typing, not the whole keyboard.** Letters,
+  digits, space, backspace, and enter now come through the system IME
+  (see above) — likely enough for plain BASIC use. But arrow keys,
+  function keys, ESC, and modifier combos (Ctrl/Shift shortcuts, RUN/STOP,
+  RESTORE) have no equivalent on a glass keyboard; no IME sends them. X16
+  software that leans on those, including this fork's own DESK COMMANDER
+  and WEATHER COMMANDER, will still need either a Bluetooth/USB keyboard
+  or a future custom on-screen overlay with dedicated buttons for those
+  keys mapped to SDL scancodes.
 - **`AT&G` (the WiFi card's HTTP fetch) won't work yet.** It currently
   shells out to the `curl` command-line tool, which doesn't exist inside
   Android's app sandbox. The real fix is linking libcurl (or using

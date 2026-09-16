@@ -117,10 +117,12 @@ for the full how-to.
 ## Android
 
 This fork's emulator core also cross-compiles into a real installable
-Android APK (arm64-v8a, current ROM and SDL2, not a stale port). It's
-early — no on-screen keyboard yet, and the WiFi card's `AT&G` HTTP fetch
-needs a rework to not depend on a `curl` binary. See [`ANDROID.md`](ANDROID.md)
-for what's proven working, what isn't yet, and how to build it.
+Android APK (arm64-v8a, current ROM and SDL2, not a stale port), with a
+working on-screen keyboard for basic typing. It's still early — no
+support yet for arrow/function keys without a Bluetooth keyboard, and the
+WiFi card's `AT&G` HTTP fetch needs a rework to not depend on a `curl`
+binary. See [`ANDROID.md`](ANDROID.md) for what's proven working, what
+isn't yet, and how to build it.
 
 ## Known limitations
 
