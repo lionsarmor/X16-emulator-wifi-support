@@ -141,17 +141,20 @@ hardcoding a path.
   that `x86_64-w64-mingw32-gcc-posix` is actually installed
   (`update-alternatives --list x86_64-w64-mingw32-gcc`).
 
+## Android
+
+Android is a real, working target now — its own bundler
+(`android/bundle-app-android.sh`), its own icon system, and its own set of
+platform-specific fixes (a startup crash, a touch-coordinate bug, both
+found and fixed by actually running the app rather than just compiling
+it). It's substantial enough to have its own document:
+see [ANDROID.md](ANDROID.md).
+
 ## What's not covered yet
 
 - **macOS**: not built. The `.app` wrapper itself would be simple (just a
   folder structure and a shell script — no compiler needed), but producing
   an actual macOS `x16emu` binary needs either `osxcross` set up on a Linux
   build machine, or building directly on a Mac. Neither is wired up here.
-- **Android**: a much bigger lift, not a packaging problem. It needs a real
-  SDL-for-Android port of the emulator (none exists for this codebase yet)
-  and a rewrite of the Wi-Fi card's `AT&G` HTTP fetch, which currently
-  shells out to the `curl` command-line tool — something a sandboxed APK
-  can't do. Treat this as a separate project if it's ever wanted.
-
-Both would slot into the same bundle layout as additional platform folders
-without changing how `linux/`, `windows/`, or `real-hardware/` work.
+  This would slot into the same bundle layout as an additional platform
+  folder without changing how `linux/`, `windows/`, or `real-hardware/` work.

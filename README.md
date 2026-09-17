@@ -151,27 +151,56 @@ and Windows 10 (1803+); nothing else is required. Android doesn't need `curl`
 at all — it uses Android's own `HttpURLConnection` instead (see
 [`ANDROID.md`](ANDROID.md)).
 
-## Exporting an app to Linux, Windows, and real hardware
+## Publishing an app: Linux, Windows, Android, and real hardware
 
-`tools/bundle-x16-app.sh` takes any built X16 app and packages it into a
-single zip with a double-click launcher for Linux and Windows (this fork's
-Wi-Fi emulator bundled in, self-contained) plus a ready-to-copy folder for
-real X16 hardware with a real ESP32 WiFi card. See [`EXPORTING.md`](EXPORTING.md)
-for the full how-to.
+Point `tools/x16-publisher.py` — a desktop GUI, `python3 tools/x16-publisher.py`,
+no extra install needed — at any built X16 app's folder, tick which
+platforms to publish to, and click Publish:
+
+- **Linux / Windows**: a double-click launcher with this fork's Wi-Fi
+  emulator bundled in, fully self-contained.
+- **Android**: a dedicated, installable APK that boots straight into that
+  one app, no picker — each app gets its own Android package ID so
+  several install side-by-side without overwriting each other.
+- **Real hardware**: a ready-to-copy folder for an actual Commander X16
+  with a real ESP32 WiFi card — no emulator involved at all.
+
+Every app gets its own icon: three are included in `assets/icons/`
+(a plain Roddy "dot" for the bare emulator, and dedicated icons for DESK
+COMMANDER and WEATHER COMMANDER, all sampled from this project's actual
+brand colors), and the GUI can add more — pick "Upload new icon…" and
+point it at any image. Everything lands in one place, `~/RODDY TARGETS`,
+instead of scattering across wherever each tool happened to run from.
+
+The GUI is a thin wrapper around two command-line tools you can also call
+directly (CI, scripting a release): `tools/bundle-x16-app.sh` for
+Linux/Windows, `android/bundle-app-android.sh` for Android. Full
+reference for both: [`EXPORTING.md`](EXPORTING.md) and [`ANDROID.md`](ANDROID.md).
 
 ## Android
 
-This fork's emulator core also cross-compiles into a real installable
-Android APK (arm64-v8a, current ROM and SDL2, not a stale port), with a
-full on-screen keyboard - every key a real X16 keyboard has, not just
-plain typing - toggled by an icon drawn by the emulator itself (see
-"On-screen keyboard" below; it's cross-platform, not Android-only). The
-WiFi card's `AT&G` HTTP(S) fetch works on Android too, through Android's
-own `HttpURLConnection` via JNI instead of the `curl` binary desktop
-builds use, and `android/bundle-app-android.sh` bundles a specific app
-into its own dedicated, installable APK the same way the Linux/Windows
-bundler does. See [`ANDROID.md`](ANDROID.md) for what's proven working, what
-isn't yet, and how to build it.
+This fork's emulator core cross-compiles into a real installable Android
+APK (arm64-v8a, current ROM and SDL2, not a stale port), with the same
+full on-screen keyboard as desktop (see above) and the WiFi card's `AT&G`
+working there too, through Android's own `HttpURLConnection` via JNI
+instead of the `curl` binary desktop builds use.
+
+Getting this actually running on a real device surfaced two real bugs,
+both found and fixed by running the app rather than only compiling it: a
+guaranteed startup crash (`SDL_GetBasePath()` returns `NULL` on Android;
+this called `strlen()` on it unconditionally), and a touch/mouse
+coordinate mismatch caused by the app fighting the device over portrait
+vs. landscape orientation at startup — fixed by locking it to landscape
+outright, which also happens to be the correct choice for an inherently
+4:3, landscape 8-bit computer.
+
+There's also best-effort support for OUYA, the discontinued Android-based
+console — an intent-filter and banner image so it shows up in OUYA's own
+launcher, if anyone still has one running. Unverified on real hardware
+(none available), and honest about the caveats in [`ANDROID.md`](ANDROID.md).
+
+See [`ANDROID.md`](ANDROID.md) for what's proven working, what isn't yet,
+and how to build it.
 
 ## Known limitations
 
