@@ -637,8 +637,23 @@ main(int argc, char **argv)
 
 	// This causes the emulator to load ROM data from the executable's directory when
 	// no ROM file is specified on the command line.
-	memcpy(rom_path, base_path, strlen(base_path) + 1);
-	strncpy(rom_path + strlen(rom_path), rom_filename, PATH_MAX - strlen(rom_path));
+	//
+	// SDL_GetBasePath() returns NULL on platforms with no meaningful
+	// "directory the app resides in" - Android is the one that matters
+	// here, where it's explicitly unsupported (there's no on-disk exe
+	// path for an installed APK's native library). That crashed this
+	// fallback outright (strlen(NULL)) on every single Android launch,
+	// before any command-line handling even ran. It's a genuine no-op
+	// once it doesn't crash: Android's launcher always passes an
+	// explicit -rom path anyway (see X16Activity.getArguments()), so
+	// this default is parsed, then immediately overwritten either way.
+	if (base_path) {
+		memcpy(rom_path, base_path, strlen(base_path) + 1);
+		strncpy(rom_path + strlen(rom_path), rom_filename, PATH_MAX - strlen(rom_path));
+	} else {
+		strncpy(rom_path, rom_filename, PATH_MAX - 1);
+		rom_path[PATH_MAX - 1] = '\0';
+	}
 	memory_randomize_ram(true);
 
 	argc--;

@@ -81,10 +81,27 @@
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
             android:exported="true"
+            android:screenOrientation="landscape"
             >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- OUYA's console launcher only lists apps whose main activity
+                 also declares this category (in addition to the ordinary
+                 LAUNCHER one above) - see the tv.ouya.igniz.icon meta-data
+                 below for the banner image it shows in its game grid. Both
+                 are inert on a normal phone/tablet; this is best-effort,
+                 not verified on real OUYA hardware (none is available to
+                 test against here) - the console has been discontinued
+                 since 2019, and it shipped Android 4.1 (API 16) against
+                 this build's minSdk 24, so whether a given unit's OS can
+                 even install this APK depends on what it was last updated
+                 to. Real gamepad input already works generically through
+                 SDL2's joystick support either way. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="tv.ouya.intent.category.GAME" />
             </intent-filter>
             <!-- Let Android know that we can handle some USB devices and should receive this event -->
             <intent-filter>
@@ -98,6 +115,7 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
             -->
+            <meta-data android:name="tv.ouya.igniz.icon" android:resource="@drawable/ouya_icon" />
         </activity>
     </application>
 

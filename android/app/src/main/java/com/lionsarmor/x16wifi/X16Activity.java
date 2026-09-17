@@ -151,6 +151,17 @@ public class X16Activity extends SDLActivity {
             "-fsroot", sdRootPath,
             "-startin", sdRootPath,
             "-scale", "2",
+            // The activity is locked to landscape (see AndroidManifest.xml)
+            // to match the X16's native display and avoid the touch/mouse
+            // coordinate corruption that came from fighting a portrait
+            // default on startup. -widescreen (an existing, already-tested
+            // flag - see main.c) stretches the emulated display from 4:3 to
+            // 16:9, which is much closer to a real phone/tablet's landscape
+            // aspect than plain 4:3, so it fills far more of the screen -
+            // real content like DESK COMMANDER's chat and screensaver get
+            // meaningfully more room to work with instead of a narrow
+            // letterboxed strip.
+            "-widescreen",
         };
 
         if (prg == null || prg.isEmpty()) {

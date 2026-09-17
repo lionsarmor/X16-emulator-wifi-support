@@ -28,7 +28,11 @@ android {
             // CMakeLists-driven source list instead of a second one.
             cmake {
                 arguments "-DANDROID_APP_PLATFORM=android-24", "-DANDROID_STL=c++_shared"
-                abiFilters 'arm64-v8a'
+                // arm64-v8a covers real phones/tablets; x86_64 is here so
+                // this also installs directly on a plain (non-Google-APIs)
+                // x86_64 AVD for fast, natively-accelerated testing on a
+                // dev machine without needing ARM translation at all.
+                abiFilters 'arm64-v8a', 'x86_64'
             }
         }
     }

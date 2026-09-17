@@ -230,6 +230,15 @@ event_to_logical(SDL_Renderer *renderer, SDL_Window *window, const SDL_Event *ev
 		if (event->button.button != SDL_BUTTON_LEFT) {
 			return;
 		}
+		if (event->button.which == SDL_TOUCH_MOUSEID) {
+			// SDL synthesizes a matching mouse event for every real touch
+			// event too, for apps that only handle a mouse. Without this
+			// check, a single tap here would be processed twice - once as
+			// SDL_FINGERDOWN/UP, once as this synthesized mouse event -
+			// toggling the keyboard open then immediately closed again
+			// every time, which looked like the toggle just didn't work.
+			return;
+		}
 		*is_mouse = true;
 		*is_down = (event->type == SDL_MOUSEBUTTONDOWN);
 		*is_up = (event->type == SDL_MOUSEBUTTONUP);
