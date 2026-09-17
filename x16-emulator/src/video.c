@@ -329,6 +329,18 @@ video_init(int window_scale, float screen_x_scale, char *quality, bool fullscree
 
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, quality);
 	SDL_SetHint(SDL_HINT_GRAB_KEYBOARD, "1"); // Grabs keyboard shortcuts from the system during window grab
+#ifdef __ANDROID__
+	// The AndroidManifest.xml activity is already locked to landscape, but
+	// that alone isn't enough: SDL's own Android backend independently
+	// calls setRequestedOrientation() once the window exists, and since
+	// this window is resizable (see SDL_SetWindowResizable below) with no
+	// orientation hint set, its own logic picks SCREEN_ORIENTATION_FULL_SENSOR
+	// - silently overriding the manifest and reintroducing the exact
+	// portrait/landscape fight (and the touch-coordinate corruption that
+	// came with it) the manifest change was meant to remove. Setting this
+	// hint is what actually controls SDL's own choice.
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
 	SDL_CreateWindowAndRenderer(SCREEN_WIDTH * window_scale * screen_x_scale, SCREEN_HEIGHT * window_scale, window_flags, &window, &renderer);
 #ifndef __MORPHOS__
 	SDL_SetWindowResizable(window, true);
