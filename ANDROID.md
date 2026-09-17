@@ -67,8 +67,10 @@ before expecting a finished app.
     screensaver - gets far more of a phone/tablet's actual (much wider
     than 4:3) display instead of a narrow letterboxed strip.
 - A full on-screen keyboard is built into the emulator itself (`x16-emulator/src/osk.c`),
-  not just a system IME popup. A small keyboard icon is always drawn in the
-  top-right corner; tapping it shows the complete X16 key layout - every
+  not just a system IME popup. A keyboard-shaped icon (two rows of keys plus
+  a spacebar, drawn as its own filled blocks rather than an abstract dot
+  grid) is always drawn in the top-right corner at a >=44 logical-pixel
+  touch target; tapping it shows the complete X16 key layout - every
   letter, digit, F1-F8, arrow keys, TAB, RUN/STOP, RESTORE, Shift, and
   Ctrl - across the bottom of the screen, and tapping it again hides it.
   Regular keys send a real keydown on finger-down and keyup on finger-up
@@ -76,16 +78,40 @@ before expecting a finished app.
   needing to be held; RESTORE fires the same NMI real hardware wires it to.
   This draws with the emulator's own renderer, so it's identical on Linux,
   Windows, and Android alike - see the main [README.md](README.md) for how
-  it's exercised on desktop too. Verified visually end-to-end on Linux
-  (toggle, full layout, and Shift's highlight all confirmed by screenshot);
-  the Android build compiles and packages the same code, but hasn't been
-  confirmed on an actual device yet.
+  it's exercised on desktop too. Verified end-to-end on both Linux (toggle,
+  full layout, and Shift's highlight all confirmed by screenshot) and on an
+  actual Android Virtual Device (toggle open/close, correct touch-to-key
+  mapping, and the new icon rendering both closed and active, all confirmed
+  by screenshot and `adb`-driven taps).
 
-I do not have a device or emulator (AVD) attached to verify it visually
-boots to a `READY.` prompt — that's the next thing to actually check. A
-debug build is at `~/RODDY TARGETS/android-dev/X16-Emulator-WiFi-debug.apk`;
-install it on a phone with `adb install X16-Emulator-WiFi-debug.apk` (or
-just copy it over and open it) to find out.
+- **Portrait was tried and reverted - locked to landscape on purpose.**
+  Allowing all four orientations (`android:screenOrientation="fullSensor"`
+  plus a matching `SDL_HINT_ORIENTATIONS` in `video.c`) looked like it
+  worked at first, but two real bugs showed up under actual testing on an
+  AVD, not just compiling:
+  - SDL's own Android startup sequence locks to landscape first, then
+    widens to `FULL_SENSOR` once the window settles. If the device's
+    actual current rotation disagrees with that, Android resolves it with
+    a real configuration change. `android:configChanges` was absorbing
+    that in place, which is fine for a one-time rotation, but this
+    particular disagreement can recur every time the Activity restarts -
+    confirmed via `logcat` showing repeated `onDestroy()`/`onCreate()`
+    cycles seconds apart, a genuine crash loop, not a one-time hiccup.
+  - Removing `orientation` (and the related size flags) from
+    `android:configChanges` to force a clean recreate instead of in-place
+    absorption stopped the loop, but broke touch accuracy instead: with
+    the app in portrait, tapping squarely on the on-screen keyboard's
+    toggle icon computed wildly wrong logical coordinates (confirmed by
+    instrumenting both sides of the JNI boundary - the Java layer
+    computed the correct normalized touch position, but by the time
+    native code read it back off the same event, it didn't match, in a
+    way that was reproducible but never appeared in landscape).
+  Landscape-only sidesteps both failure modes and is also just the
+  correct choice for an inherently 4:3, landscape 8-bit computer. If
+  someone wants to pick this back up, both bugs are in SDL's own Android
+  integration (`android/app/src/main/java/org/libsdl/app/SDLSurface.java`'s
+  `onTouch()` and the Activity lifecycle around `setOrientation()`), not
+  in this project's own code.
 
 - **Per-app bundling works, matching the Linux/Windows bundler.**
   `android/bundle-app-android.sh --name "DESK COMMANDER" --prg DCMAIN.PRG --sdcard /path/to/dist/sdcard`

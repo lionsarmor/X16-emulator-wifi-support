@@ -197,6 +197,13 @@ enough by itself, since SDL2's own Android backend independently resets
 the orientation at runtime unless told otherwise (`SDL_HINT_ORIENTATIONS`)
 — confirmed fixed via `adb shell dumpsys window` showing the runtime
 orientation actually matching the lock, not just the manifest declaring it.
+Portrait was tried afterward and reverted: allowing all four orientations
+reintroduced touch-coordinate corruption through a different mechanism (a
+real bug in SDL's own Android touch-handling code, not this project's),
+so the emulator stays locked to landscape — see [`ANDROID.md`](ANDROID.md)
+for the full investigation. The on-screen keyboard's toggle icon was also
+redrawn to actually look like a keyboard (individual keys plus a spacebar,
+not a grid of dots) and enlarged to a proper touch-target size.
 
 There's also best-effort support for OUYA, the discontinued Android-based
 console — an intent-filter and banner image so it shows up in OUYA's own

@@ -339,6 +339,25 @@ video_init(int window_scale, float screen_x_scale, char *quality, bool fullscree
 	// portrait/landscape fight (and the touch-coordinate corruption that
 	// came with it) the manifest change was meant to remove. Setting this
 	// hint is what actually controls SDL's own choice.
+	//
+	// Portrait was tried and reverted: allowing FULL_SENSOR (both here and
+	// in the manifest) doesn't just add portrait, it makes SDL's own
+	// startup sequence (which locks to landscape first, then widens to
+	// FULL_SENSOR once the window settles) request an orientation that can
+	// disagree with the device's actual current rotation. Android resolves
+	// that disagreement with a real configuration change, and if the app
+	// isn't set up to absorb it in place, that becomes an Activity
+	// destroy/recreate loop - confirmed via logcat showing repeated
+	// onDestroy()/onCreate() cycles seconds apart, not a one-time event.
+	// Trying to absorb it in place instead (removing orientation from
+	// android:configChanges) didn't fix that; it just meant Android's
+	// automatic in-place resize left SDL's Java-side touch normalization
+	// reading stale surface dimensions, so taps landed at wildly wrong
+	// logical coordinates (confirmed by comparing the Java layer's
+	// correctly-computed touch fraction against what native code actually
+	// received for the same event). Landscape-only avoids both failure
+	// modes and is also just the correct choice for an inherently 4:3,
+	// landscape 8-bit computer.
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
 	SDL_CreateWindowAndRenderer(SCREEN_WIDTH * window_scale * screen_x_scale, SCREEN_HEIGHT * window_scale, window_flags, &window, &renderer);

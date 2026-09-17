@@ -145,8 +145,8 @@ static const OskRow ROWS[] = {
 
 #define KEY_UNIT 34
 #define KEY_GAP 3
-#define TOGGLE_SIZE 30
-#define TOGGLE_MARGIN 6
+#define TOGGLE_SIZE 44 // >=44 logical px: standard minimum touch-target size
+#define TOGGLE_MARGIN 8
 
 static bool g_open = false;
 static bool g_shift_on = false;
@@ -366,20 +366,35 @@ draw_key(SDL_Renderer *renderer, SDL_Rect rect, const char *label, bool active)
 static void
 draw_toggle_icon(SDL_Renderer *renderer, SDL_Rect r)
 {
-	SDL_SetRenderDrawColor(renderer, g_open ? 90 : 55, g_open ? 170 : 55, g_open ? 90 : 60, 220);
+	SDL_SetRenderDrawColor(renderer, g_open ? 90 : 40, g_open ? 170 : 40, g_open ? 90 : 46, 235);
 	SDL_RenderFillRect(renderer, &r);
-	SDL_SetRenderDrawColor(renderer, 200, 200, 205, 255);
+	SDL_SetRenderDrawColor(renderer, 210, 210, 215, 255);
 	SDL_RenderDrawRect(renderer, &r);
 
-	// A small "keyboard" glyph: an outer body plus a grid of key dots.
-	SDL_Rect body = { r.x + 4, r.y + 8, r.w - 8, r.h - 14 };
-	SDL_RenderDrawRect(renderer, &body);
+	// A keyboard glyph: an outer body containing two rows of individual
+	// square keys plus one wide spacebar along the bottom, each drawn as
+	// its own filled block with a gap around it - so it reads as a
+	// keyboard's actual key layout at a glance, not an abstract grid of
+	// dots.
+	int pad = r.w / 8;
+	SDL_Rect body = { r.x + pad, r.y + pad, r.w - 2 * pad, r.h - 2 * pad };
+
+	int gap = 1;
+	int cols = 5;
+	int row_h = body.h / 3;
+	SDL_SetRenderDrawColor(renderer, 225, 225, 230, 255);
+
 	for (int row = 0; row < 2; row++) {
-		for (int col = 0; col < 5; col++) {
-			SDL_Rect dot = { body.x + 2 + col * (body.w - 4) / 5, body.y + 2 + row * (body.h - 4) / 2, (body.w - 4) / 5 - 1, (body.h - 4) / 2 - 1 };
-			SDL_RenderFillRect(renderer, &dot);
+		int key_w = (body.w - (cols + 1) * gap) / cols;
+		int y = body.y + row * row_h;
+		for (int col = 0; col < cols; col++) {
+			SDL_Rect key = { body.x + gap + col * (key_w + gap), y, key_w, row_h - gap };
+			SDL_RenderFillRect(renderer, &key);
 		}
 	}
+
+	SDL_Rect space = { body.x + gap, body.y + 2 * row_h, body.w - 2 * gap, body.h - 2 * row_h };
+	SDL_RenderFillRect(renderer, &space);
 }
 
 void
