@@ -78,7 +78,7 @@ x16bundle --name "WEATHER COMMANDER" --prg WEATHER.PRG \
 | `--name` | yes | Human-readable app name. Becomes the bundle/zip name and the launcher filenames, e.g. `DESK COMMANDER.exe`. |
 | `--sdcard` | yes | Path to the app's finished, ready-to-run files. |
 | `--prg` | only if the app has no `AUTOBOOT.X16` | Which `.PRG` (relative to `--sdcard`) to load and `RUN`. If the app already autoboots itself, you can omit this. |
-| `--out` | no | Output directory. Defaults to `~/x16-bundles`. |
+| `--out` | no | Output directory. Defaults to `~/RODDY TARGETS`. |
 | `--no-zip` | no | Leave the bundle as a plain folder instead of also zipping it. |
 | `--platforms` | no | Comma-separated subset of `linux,windows` to actually build. Defaults to both. `real-hardware/` is always included either way — it's just a file copy, not a build. |
 
@@ -87,8 +87,8 @@ Run `tools/bundle-x16-app.sh --help` any time for the same reference.
 ## What you get
 
 ```
-~/x16-bundles/DESK-COMMANDER.zip        <- the one file to hand someone
-~/x16-bundles/DESK-COMMANDER/           <- same thing, unzipped
+~/RODDY TARGETS/DESK-COMMANDER.zip        <- the one file to hand someone
+~/RODDY TARGETS/DESK-COMMANDER/           <- same thing, unzipped
     linux/
         x16emu, rom.bin                 (the Wi-Fi-enabled emulator)
         app/                            (your app's files, copied in)

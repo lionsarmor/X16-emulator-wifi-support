@@ -52,7 +52,7 @@ before expecting a finished app.
 
 I do not have a device or emulator (AVD) attached to verify it visually
 boots to a `READY.` prompt — that's the next thing to actually check. A
-debug build is at `~/x16-bundles/android-dev/X16-Emulator-WiFi-debug.apk`;
+debug build is at `~/RODDY TARGETS/android-dev/X16-Emulator-WiFi-debug.apk`;
 install it on a phone with `adb install X16-Emulator-WiFi-debug.apk` (or
 just copy it over and open it) to find out.
 

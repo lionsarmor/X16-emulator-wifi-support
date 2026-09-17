@@ -20,12 +20,16 @@ import subprocess
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
+
+from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LINUX_WINDOWS_BUNDLER = REPO_ROOT / "tools" / "bundle-x16-app.sh"
 ANDROID_BUNDLER = REPO_ROOT / "android" / "bundle-app-android.sh"
+ICON_LIBRARY_DIR = REPO_ROOT / "assets" / "icons"
 CONFIG_PATH = Path.home() / ".config" / "x16-publisher.json"
+UPLOAD_SENTINEL = "Upload new icon…"
 
 BG = "#1e1e24"
 PANEL = "#282830"
@@ -145,7 +149,7 @@ class X16Publisher(tk.Tk):
 
         # --- Output dir ---
         ttk.Label(form, text="Output folder:").grid(row=3, column=0, sticky="w", pady=4)
-        self.out_var = tk.StringVar(value=str(Path.home() / "x16-bundles"))
+        self.out_var = tk.StringVar(value=str(Path.home() / "RODDY TARGETS"))
         ttk.Entry(form, textvariable=self.out_var).grid(row=3, column=1, sticky="ew", padx=(8, 8))
         ttk.Button(form, text="Browse…", command=self._browse_out).grid(row=3, column=2)
 
@@ -159,6 +163,18 @@ class X16Publisher(tk.Tk):
         ttk.Checkbutton(plat_frame, text="Linux (.sh)", variable=self.linux_var).pack(side="left", padx=8)
         ttk.Checkbutton(plat_frame, text="Windows (.exe)", variable=self.windows_var).pack(side="left", padx=8)
         ttk.Checkbutton(plat_frame, text="Android (.apk)", variable=self.android_var).pack(side="left", padx=8)
+
+        # --- Icon (Android only) ---
+        icon_frame = ttk.Frame(self)
+        icon_frame.pack(fill="x", padx=16, pady=(10, 0))
+        ttk.Label(icon_frame, text="Icon (Android):").pack(side="left", padx=(0, 8))
+        self.icon_var = tk.StringVar()
+        self.icon_combo = ttk.Combobox(icon_frame, textvariable=self.icon_var, state="readonly", width=28)
+        self.icon_combo.pack(side="left")
+        self.icon_combo.bind("<<ComboboxSelected>>", self._on_icon_selected)
+        self.icon_preview = tk.Label(icon_frame, bg=BG)
+        self.icon_preview.pack(side="left", padx=10)
+        self._refresh_icon_list(select="roddy-default")
 
         # --- Android app id (advanced, only matters for Android) ---
         adv_frame = ttk.Frame(self)
@@ -212,6 +228,8 @@ class X16Publisher(tk.Tk):
         for key, var in (("linux", self.linux_var), ("windows", self.windows_var), ("android", self.android_var)):
             if key in cfg:
                 var.set(cfg[key])
+        if cfg.get("icon"):
+            self._refresh_icon_list(select=cfg["icon"])
 
     def _save_state(self):
         save_config({
@@ -220,6 +238,7 @@ class X16Publisher(tk.Tk):
             "linux": self.linux_var.get(),
             "windows": self.windows_var.get(),
             "android": self.android_var.get(),
+            "icon": self.icon_var.get() if self.icon_var.get() != UPLOAD_SENTINEL else "",
         })
 
     def _browse_folder(self):
@@ -231,6 +250,66 @@ class X16Publisher(tk.Tk):
         path = filedialog.askdirectory(title="Select output folder")
         if path:
             self.out_var.set(path)
+
+    def _refresh_icon_list(self, select=None):
+        ICON_LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+        names = sorted(p.stem for p in ICON_LIBRARY_DIR.glob("*.png"))
+        self.icon_combo["values"] = names + [UPLOAD_SENTINEL]
+        if select and select in names:
+            self.icon_var.set(select)
+        elif names:
+            self.icon_var.set(names[0])
+        self._update_icon_preview()
+
+    def _update_icon_preview(self):
+        name = self.icon_var.get()
+        path = ICON_LIBRARY_DIR / f"{name}.png"
+        if not path.exists():
+            self.icon_preview.configure(image="", text="")
+            return
+        try:
+            img = tk.PhotoImage(file=str(path))
+            factor = max(1, img.width() // 40)
+            img = img.subsample(factor, factor)
+            self.icon_preview.image = img  # keep a reference, or Tk garbage-collects it
+            self.icon_preview.configure(image=img, text="")
+        except tk.TclError:
+            self.icon_preview.configure(image="", text="(preview unavailable)")
+
+    def _on_icon_selected(self, _event=None):
+        if self.icon_var.get() == UPLOAD_SENTINEL:
+            self._upload_icon()
+            return
+        self._update_icon_preview()
+
+    def _upload_icon(self):
+        path = filedialog.askopenfilename(
+            title="Choose an icon image (square works best)",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif"), ("All files", "*.*")],
+        )
+        if not path:
+            self._refresh_icon_list()  # revert the combobox off the sentinel
+            return
+        default_name = Path(path).stem
+        name = simpledialog.askstring("Name this icon", "Icon name (used in the dropdown):", initialvalue=default_name)
+        if not name:
+            self._refresh_icon_list()
+            return
+        name = re.sub(r"[^A-Za-z0-9_-]+", "-", name).strip("-").lower() or "custom-icon"
+        dest = ICON_LIBRARY_DIR / f"{name}.png"
+        try:
+            img = Image.open(path).convert("RGB")
+            w, h = img.size
+            if w != h:
+                side = min(w, h)
+                img = img.crop(((w - side) // 2, (h - side) // 2, (w - side) // 2 + side, (h - side) // 2 + side))
+            img = img.resize((512, 512), Image.LANCZOS)
+            img.save(dest)
+        except Exception as e:
+            messagebox.showerror("X16 Publisher", f"Couldn't add that image: {e}")
+            self._refresh_icon_list()
+            return
+        self._refresh_icon_list(select=name)
 
     def _on_folder_changed(self):
         folder = Path(self.folder_var.get()) if self.folder_var.get() else None
@@ -288,7 +367,7 @@ class X16Publisher(tk.Tk):
         if not (self.linux_var.get() or self.windows_var.get() or self.android_var.get()):
             messagebox.showerror("X16 Publisher", "Pick at least one platform.")
             return None
-        out = self.out_var.get().strip() or str(Path.home() / "x16-bundles")
+        out = self.out_var.get().strip() or str(Path.home() / "RODDY TARGETS")
         return {"folder": folder, "name": name, "prg": prg, "out": out}
 
     def _on_publish(self):
@@ -363,6 +442,9 @@ class X16Publisher(tk.Tk):
                 cmd += ["--prg", params["prg"]]
             if self.app_id_var.get().strip():
                 cmd += ["--app-id", self.app_id_var.get().strip()]
+            icon = self.icon_var.get().strip()
+            if icon and icon != UPLOAD_SENTINEL:
+                cmd += ["--icon", icon]
             rc = self._run_subprocess(cmd)
             if rc == 0:
                 ok_count += 1

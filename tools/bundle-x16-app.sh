@@ -6,7 +6,7 @@
 #
 # Usage:
 #   tools/bundle-x16-app.sh --name "DESK COMMANDER" --prg DCMAIN.PRG \
-#       --sdcard "/path/to/app/dist/sdcard" [--out ~/x16-bundles] [--no-zip] \
+#       --sdcard "/path/to/app/dist/sdcard" [--out ~/RODDY TARGETS] [--no-zip] \
 #       [--platforms linux,windows]
 #
 #   --name       Human-readable app name. Used for the bundle folder/zip
@@ -18,7 +18,7 @@
 #                that would normally be copied onto a real X16's SD card
 #                (the .PRG, its overlay .BIN files, assets, AUTOBOOT.X16
 #                if any).
-#   --out        Where to write the bundle. Defaults to ~/x16-bundles.
+#   --out        Where to write the bundle. Defaults to ~/RODDY TARGETS.
 #   --no-zip     Leave the bundle as a plain folder instead of also zipping it.
 #   --platforms  Comma-separated subset of "linux,windows" to actually
 #                build (default: both). The real-hardware/ folder is always
@@ -44,7 +44,7 @@ WINDOWS_BUILD="$EMU_DIR/build-windows"
 NAME=""
 PRG=""
 SDCARD=""
-OUT="$HOME/x16-bundles"
+OUT="$HOME/RODDY TARGETS"
 DO_ZIP=1
 PLATFORMS="linux,windows"
 

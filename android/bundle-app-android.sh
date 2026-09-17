@@ -6,20 +6,30 @@
 #
 # Usage:
 #   android/bundle-app-android.sh --name "DESK COMMANDER" --prg DCMAIN.PRG \
-#       --sdcard "/path/to/app/dist/sdcard" [--out ~/x16-bundles] [--app-id com.example.deskcommander]
+#       --sdcard "/path/to/app/dist/sdcard" [--out ~/RODDY TARGETS] \
+#       [--app-id com.example.deskcommander] [--icon desk-commander]
 #
 # Each app should get its own --app-id (defaults to a slug derived from
 # --name under com.lionsarmor.x16wifi) so it installs as a distinct app
 # alongside others rather than overwriting a previous install.
+#
+# --icon accepts either the name of an icon already in assets/icons/
+# (e.g. "desk-commander" for assets/icons/desk-commander.png - see that
+# folder for what's there) or a path to any other square-ish image file.
+# Omit it to keep whatever icon android/app/src/main/res/mipmap-*/ already
+# has (the plain Roddy dot, by default).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+ICON_LIBRARY_DIR="$REPO_ROOT/assets/icons"
 
 NAME=""
 PRG=""
 SDCARD=""
-OUT="$HOME/x16-bundles"
+OUT="$HOME/RODDY TARGETS"
 APP_ID=""
+ICON=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -28,6 +38,7 @@ while [[ $# -gt 0 ]]; do
         --sdcard) SDCARD="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --app-id) APP_ID="$2"; shift 2 ;;
+        --icon) ICON="$2"; shift 2 ;;
         -h|--help) grep '^#' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
@@ -94,6 +105,34 @@ if [[ -n "$PRG" ]]; then
 else
     : > "$ASSETS_DIR/launcher.cfg"
 fi
+
+ICON_CHANGED=0
+if [[ -n "$ICON" ]]; then
+    if [[ -f "$ICON" ]]; then
+        ICON_PATH="$ICON"
+    elif [[ -f "$ICON_LIBRARY_DIR/$ICON.png" ]]; then
+        ICON_PATH="$ICON_LIBRARY_DIR/$ICON.png"
+    else
+        echo "--icon '$ICON' not found as a file, and no $ICON_LIBRARY_DIR/$ICON.png in the icon library." >&2
+        echo "Icons available in the library: $(ls "$ICON_LIBRARY_DIR" 2>/dev/null | sed 's/\.png$//' | tr '\n' ' ')" >&2
+        exit 1
+    fi
+    echo "==> Applying icon: $ICON_PATH"
+    python3 "$REPO_ROOT/tools/gen-app-icon.py" "$ICON_PATH" "$SCRIPT_DIR/app/src/main/res"
+    ICON_CHANGED=1
+fi
+
+# The mipmap files just (maybe) overwritten are checked into git as the
+# default Roddy-dot icon - restore them once the build's done (success or
+# not) so a per-app icon never lingers as an uncommitted change in the
+# working tree. Only if this is actually a git checkout with no other
+# unrelated mipmap edits already pending.
+restore_default_icon() {
+    if [[ "$ICON_CHANGED" -eq 1 ]] && git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git -C "$REPO_ROOT" checkout -- android/app/src/main/res/mipmap-*/ic_launcher.png 2>/dev/null || true
+    fi
+}
+trap restore_default_icon EXIT
 
 echo "==> Building APK (this can take a while on the first run)..."
 (cd "$SCRIPT_DIR" && ./gradlew assembleDebug -PxAppId="$APP_ID" -PxAppLabel="$NAME")
