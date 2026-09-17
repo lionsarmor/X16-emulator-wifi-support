@@ -44,6 +44,10 @@ notes — every design decision is explained inline).
   correctly.
 - **A Zimodem-compatible AT command engine** behind the network port:
   - `ATD"host:port"` / `ATDT"host:port"` — dial out over a real TCP connection.
+  - `ATDS"host:port"` — raw TLS on desktop builds with OpenSSL, including
+    certificate/hostname verification and SNI. Weather Commander uses this
+    for its direct HTTPS requests. Builds without OpenSSL report `ERROR`
+    for secure dials; they never silently downgrade them to plain TCP.
   - `ATA<port>` — listen for an incoming TCP connection.
   - `+++` — standard Hayes guard-timed escape back to command mode without
     hanging up; `ATO` resumes the connection.
@@ -75,6 +79,15 @@ Build normally (see below), then pass the new `-wifi` flag:
 ```sh
 ./x16emu -wifi
 ```
+
+In an application's Wi-Fi settings, select **X16-EMULATOR-NET** and leave its
+password empty. This represents the host's internet connection. `ATH` closes
+the current socket while preserving the network association. Large raw socket
+replies apply backpressure until the guest consumes the queued bytes.
+
+On this development computer, **WEATHERWIFI** builds Weather Commander and runs
+this emulator with `-wifi`. Its project now lives under
+`Desktop/Roddy Software/WEATHER COMMANDER`.
 
 or at a non-default address (only the low byte matters — the card always lives
 somewhere in the `$9Fxx` I/O page):
@@ -116,6 +129,15 @@ cd x16-emulator
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
+
+Install OpenSSL development files (Ubuntu: `libssl-dev`) before configuring
+to enable raw `ATDS` TLS. The desktop CMake build detects and links OpenSSL.
+The Android-specific build still provides HTTPS through `AT&G`; raw `ATDS`
+requires a separate TLS integration there.
+
+Run `python3 tools/test_wifi_transport.py` for local TCP/TLS regression tests:
+trusted/untrusted certificates, a 60 KB binary reply with a slow reader, and
+Wi-Fi state across socket close/reset.
 
 You'll also need a `rom.bin` (the X16 system ROM) next to the built `x16emu`
 binary — grab the latest release from

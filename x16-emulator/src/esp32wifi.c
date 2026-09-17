@@ -36,6 +36,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#if defined(WIFI_HAVE_OPENSSL)
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 
 #include "glue.h"
 #include "esp32wifi.h"
@@ -75,6 +79,7 @@
     #include <fcntl.h>
     #include <errno.h>
     #include <unistd.h>
+    #include <signal.h>
     typedef int sock_t;
     #define SOCK_INVALID (-1)
     #define CLOSESOCK(s) close(s)
@@ -627,6 +632,7 @@ static void wifi_byte_out(uint8_t sel, uint8_t b)
 typedef enum {
     ZM_COMMAND,
     ZM_DIALING,
+    ZM_TLS_HANDSHAKE,
     ZM_CONNECTED,
 } zm_state_t;
 
@@ -643,7 +649,15 @@ static int zm_cmdlen = 0;
 static bool zm_echo = true;
 static bool zm_verbose = true;
 static bool zm_telnet_mode = false;
-static bool zm_wifi_joined = false; // set by ATW"ssid,pass", cleared by ATH/ATZ
+static bool zm_wifi_joined = false; // a network association outlives a TCP call
+static bool zm_command_cr = false;
+
+#if defined(WIFI_HAVE_OPENSSL)
+static SSL_CTX *zm_tls_ctx = NULL;
+static SSL *zm_tls = NULL;
+// SSL_write retries must use the original byte count even as UART bytes arrive.
+static int zm_tls_write_pending = 0;
+#endif
 
 #if WIFI_HAVE_SOCKETS
 static int64_t zm_dial_start_cycle = 0;
@@ -723,6 +737,11 @@ static void zm_set_dcd(bool up)
 
 static void zm_close_data_sock(void)
 {
+#if defined(WIFI_HAVE_OPENSSL)
+    SSL_free(zm_tls);
+    zm_tls = NULL;
+    zm_tls_write_pending = 0;
+#endif
     if (zm_sock != SOCK_INVALID) {
         CLOSESOCK(zm_sock);
         zm_sock = SOCK_INVALID;
@@ -758,7 +777,6 @@ static void zm_do_reset(void)
     zm_verbose = true;
     zm_telnet_mode = false;
     zm_esc_count = 0;
-    zm_wifi_joined = false;
 }
 
 static void zm_do_hangup(void)
@@ -773,22 +791,22 @@ static void zm_do_hangup(void)
 #endif
     zm_state = ZM_COMMAND;
     zm_esc_count = 0;
-    // Real Zimodem's ATH only closes sockets, but every known X16 client
-    // (including DESK COMMANDER) treats "hang up" as "go offline", and
-    // expects a later ATI2 to agree. Clear the join state to match.
-    zm_wifi_joined = false;
+    // ATH closes the socket, not the Wi-Fi association. Weather applications
+    // close a call after each HTTP request and must stay joined for the next.
 }
 
 // Parses the "PTEXS" modifier letters Zimodem allows between the
 // command letter and the quoted argument. We recognize 'T' (enable
-// basic Telnet IAC filtering); the others are accepted for command
-// compatibility but have no effect in this emulation.
+// basic Telnet IAC filtering) and 'S' (TLS).
 #if WIFI_HAVE_SOCKETS
-static const char *zm_skip_modifiers(const char *p, bool *telnet)
+static const char *zm_skip_modifiers(const char *p, bool *telnet, bool *secure)
 {
-    while (*p && *p != '"' && strchr("PTEXSpteXs", *p)) {
+    while (*p && *p != '"' && strchr("PTEXS", toupper((unsigned char)*p))) {
         if (*p == 'T' || *p == 't') {
             *telnet = true;
+        }
+        if (*p == 'S' || *p == 's') {
+            *secure = true;
         }
         p++;
     }
@@ -800,7 +818,14 @@ static void zm_do_dial(const char *args)
 {
 #if WIFI_HAVE_SOCKETS
     bool telnet = false;
-    args = zm_skip_modifiers(args, &telnet);
+    bool secure = false;
+    args = zm_skip_modifiers(args, &telnet, &secure);
+#if !defined(WIFI_HAVE_OPENSSL)
+    if (secure) {
+        zm_result("ERROR", 4);
+        return;
+    }
+#endif
 
     bool quoted = false;
     if (*args == '"') {
@@ -844,7 +869,31 @@ static void zm_do_dial(const char *args)
     connect(s, res->ai_addr, (int)res->ai_addrlen); // expected to return EINPROGRESS/WOULDBLOCK
     freeaddrinfo(res);
 
+    zm_close_data_sock();
     zm_sock = s;
+#if defined(WIFI_HAVE_OPENSSL)
+    if (secure) {
+        if (!zm_tls_ctx) {
+            zm_tls_ctx = SSL_CTX_new(TLS_client_method());
+            if (zm_tls_ctx) {
+                SSL_CTX_set_verify(zm_tls_ctx, SSL_VERIFY_PEER, NULL);
+                if (SSL_CTX_set_default_verify_paths(zm_tls_ctx) != 1) {
+                    SSL_CTX_free(zm_tls_ctx);
+                    zm_tls_ctx = NULL;
+                }
+            }
+        }
+        zm_tls = zm_tls_ctx ? SSL_new(zm_tls_ctx) : NULL;
+        if (!zm_tls || SSL_set_fd(zm_tls, (int)s) != 1 ||
+            SSL_set_tlsext_host_name(zm_tls, host) != 1 || SSL_set1_host(zm_tls, host) != 1) {
+            zm_close_data_sock();
+            zm_result("NO CARRIER", 3);
+            return;
+        }
+        SSL_set_connect_state(zm_tls);
+        SSL_set_mode(zm_tls, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+    }
+#endif
     zm_telnet_mode = telnet;
     zm_telnet_st = 0;
     zm_state = ZM_DIALING;
@@ -859,7 +908,12 @@ static void zm_do_answer(const char *args)
 {
 #if WIFI_HAVE_SOCKETS
     bool telnet = false;
-    args = zm_skip_modifiers(args, &telnet);
+    bool secure = false;
+    args = zm_skip_modifiers(args, &telnet, &secure);
+    if (secure) { // No server certificate is configured for inbound TLS.
+        zm_result("ERROR", 4);
+        return;
+    }
 
     char *end = NULL;
     long port = strtol(args, &end, 10);
@@ -936,7 +990,7 @@ static void zm_do_wifi(const char *args)
         // Zimodem's "SSID (rssi)" line, which is what scan-driven UIs
         // (e.g. DESK COMMANDER's Network Setup) parse looking for a
         // trailing " (" marker before the RSSI.
-        zm_emit("\r\n" ZM_VIRTUAL_SSID " (-40)*\r\n");
+        zm_emit("\r\n" ZM_VIRTUAL_SSID " (-40)\r\n");
         zm_result("OK", 0);
         return;
     }
@@ -1314,7 +1368,22 @@ static void zm_tx_flush(void)
     }
     int sent_total = 0;
     while (sent_total < zm_txlen) {
-        int n = send(zm_sock, (const char *)zm_txbuf + sent_total, zm_txlen - sent_total, 0);
+        int n;
+#if defined(WIFI_HAVE_OPENSSL)
+        if (zm_tls) {
+            if (!zm_tls_write_pending) zm_tls_write_pending = zm_txlen - sent_total;
+            ERR_clear_error();
+            n = SSL_write(zm_tls, zm_txbuf + sent_total, zm_tls_write_pending);
+            if (n <= 0) {
+                int error = SSL_get_error(zm_tls, n);
+                if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) break;
+                zm_connection_lost();
+                return;
+            }
+            zm_tls_write_pending = 0;
+        } else
+#endif
+        n = send(zm_sock, (const char *)zm_txbuf + sent_total, zm_txlen - sent_total, 0);
         if (n <= 0) {
             int err = SOCK_ERRNO;
             if (n < 0 && (err == SOCK_EWOULDBLOCK || err == SOCK_EAGAIN)) {
@@ -1383,10 +1452,16 @@ static void zm_handle_data_byte(uint8_t b)
 
 static void zm_feed_out_byte(uint8_t b)
 {
+    // The LF of a command's CRLF must not become the first socket byte if
+    // a local connection finishes between those two UART characters.
+    if (zm_command_cr && b == '\n') { zm_command_cr = false; return; }
+    zm_command_cr = false;
     if (zm_state == ZM_CONNECTED) {
         zm_handle_data_byte(b);
         return;
     }
+
+    if (b == 3) { zm_cmdlen = 0; return; } // cancel a partial AT command
 
     // Command mode (also while ZM_DIALING: a stray keypress here just
     // gets queued for the next command line, matching a real modem's
@@ -1395,6 +1470,7 @@ static void zm_feed_out_byte(uint8_t b)
         ring_push(&dev_rx[0], b);
     }
     if (b == '\r' || b == '\n') {
+        zm_command_cr = b == '\r';
         zm_cmdbuf[zm_cmdlen] = 0;
         zm_process_command(zm_cmdbuf);
         zm_cmdlen = 0;
@@ -1447,7 +1523,7 @@ static void zm_feed_in_byte(uint8_t b)
                 reply[1] = (zm_telnet_cmd == TELNET_WILL || zm_telnet_cmd == TELNET_WONT) ? TELNET_DONT : TELNET_WONT;
                 reply[2] = b;
                 if (zm_sock != SOCK_INVALID) {
-                    send(zm_sock, (const char *)reply, 3, 0);
+                    for (int i = 0; i < 3; i++) zm_tx_byte(reply[i]);
                 }
                 zm_telnet_st = 0;
                 return;
@@ -1493,9 +1569,15 @@ static void zm_poll(void)
             socklen_t len = sizeof(err);
             getsockopt(zm_sock, SOL_SOCKET, SO_ERROR, (char *)&err, &len);
             if (err == 0 && FD_ISSET(zm_sock, &wfds) && !FD_ISSET(zm_sock, &efds)) {
-                zm_state = ZM_CONNECTED;
-                zm_set_dcd(true);
-                zm_result("CONNECT", 1);
+#if defined(WIFI_HAVE_OPENSSL)
+                if (zm_tls) zm_state = ZM_TLS_HANDSHAKE;
+                else
+#endif
+                {
+                    zm_state = ZM_CONNECTED;
+                    zm_set_dcd(true);
+                    zm_result("CONNECT", 1);
+                }
             } else {
                 zm_close_data_sock();
                 zm_state = ZM_COMMAND;
@@ -1520,9 +1602,46 @@ static void zm_poll(void)
         }
     }
 
+#if defined(WIFI_HAVE_OPENSSL)
+    if (zm_state == ZM_TLS_HANDSHAKE) {
+        ERR_clear_error();
+        int result = SSL_connect(zm_tls);
+        int error = result == 1 ? SSL_ERROR_NONE : SSL_get_error(zm_tls, result);
+        if (result == 1) {
+            zm_state = ZM_CONNECTED;
+            zm_set_dcd(true);
+            zm_result("CONNECT", 1);
+        } else if ((error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE) ||
+                   (g_cycle_total - zm_dial_start_cycle) > (int64_t)ZM_DIAL_TIMEOUT_SECONDS * guard_cycles()) {
+            zm_close_data_sock();
+            zm_state = ZM_COMMAND;
+            zm_result("NO CARRIER", 3);
+        }
+    }
+#endif
+
     if (zm_state == ZM_CONNECTED && zm_sock != SOCK_INVALID) {
         uint8_t buf[1024];
-        int n = recv(zm_sock, (char *)buf, sizeof(buf), 0);
+        zm_tx_flush();
+        if (zm_state != ZM_CONNECTED) return;
+        // Backpressure the host socket instead of dropping payloads larger
+        // than the 4K ring while the 8-bit CPU consumes them at UART speed.
+        int capacity = DEV_RX_SIZE - dev_rx[0].count - 32; // reserve modem results
+        if (capacity <= 0) return;
+        if (capacity > (int)sizeof(buf)) capacity = sizeof(buf);
+        int n;
+#if defined(WIFI_HAVE_OPENSSL)
+        if (zm_tls) {
+            ERR_clear_error();
+            n = SSL_read(zm_tls, buf, capacity);
+            if (n <= 0) {
+                int error = SSL_get_error(zm_tls, n);
+                if (error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE) zm_connection_lost();
+                return;
+            }
+        } else
+#endif
+        n = recv(zm_sock, (char *)buf, capacity, 0);
         if (n > 0) {
             for (int i = 0; i < n; i++) {
                 zm_feed_in_byte(buf[i]);
@@ -1555,6 +1674,7 @@ static void zm_reset_engine(void)
 {
     zm_state = ZM_COMMAND;
     zm_cmdlen = 0;
+    zm_command_cr = false;
     zm_echo = true;
     zm_verbose = true;
     zm_telnet_mode = false;
@@ -1575,6 +1695,10 @@ static void zm_reset_engine(void)
 
 void wifi_card_init(void)
 {
+#if WIFI_HAVE_SOCKETS && !defined(_WIN32)
+    // A peer closing during SSL_write/send must fail that call, not kill the GUI.
+    signal(SIGPIPE, SIG_IGN);
+#endif
     memset(&dev_rx[0], 0, sizeof(dev_rx[0]));
     memset(&dev_rx[1], 0, sizeof(dev_rx[1]));
     zm_reset_engine();
@@ -1592,10 +1716,11 @@ void wifi_card_init(void)
 void wifi_card_shutdown(void)
 {
 #if WIFI_HAVE_SOCKETS
-    if (zm_sock != SOCK_INVALID) {
-        CLOSESOCK(zm_sock);
-        zm_sock = SOCK_INVALID;
-    }
+    zm_close_data_sock();
+#if defined(WIFI_HAVE_OPENSSL)
+    SSL_CTX_free(zm_tls_ctx);
+    zm_tls_ctx = NULL;
+#endif
     if (zm_listen_sock != SOCK_INVALID) {
         CLOSESOCK(zm_listen_sock);
         zm_listen_sock = SOCK_INVALID;

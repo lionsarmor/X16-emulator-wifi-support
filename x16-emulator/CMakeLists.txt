@@ -237,6 +237,18 @@ target_link_libraries(x16emu PRIVATE
     ZLIB::ZLIB
 )
 
+# Raw ZiModem ATDS streams need TLS, separately from the AT&G curl helper.
+# Never silently send an encrypted dial's payload over a plaintext socket.
+if(NOT EMSCRIPTEN AND NOT ANDROID)
+    find_package(OpenSSL QUIET)
+    if(OpenSSL_FOUND)
+        target_compile_definitions(x16emu PRIVATE WIFI_HAVE_OPENSSL=1)
+        target_link_libraries(x16emu PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    else()
+        message(WARNING "OpenSSL development files missing: ATDS will report ERROR. Install libssl-dev for raw TLS Wi-Fi support.")
+    endif()
+endif()
+
 if(TARGET SDL2::SDL2main)
     target_link_libraries(x16emu PRIVATE SDL2::SDL2main)
 endif()
