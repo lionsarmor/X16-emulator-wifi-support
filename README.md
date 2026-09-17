@@ -190,9 +190,13 @@ both found and fixed by running the app rather than only compiling it: a
 guaranteed startup crash (`SDL_GetBasePath()` returns `NULL` on Android;
 this called `strlen()` on it unconditionally), and a touch/mouse
 coordinate mismatch caused by the app fighting the device over portrait
-vs. landscape orientation at startup — fixed by locking it to landscape
-outright, which also happens to be the correct choice for an inherently
-4:3, landscape 8-bit computer.
+vs. landscape orientation at startup. Fixing that one took two changes,
+not one: locking the manifest to landscape (also just the correct choice
+for an inherently 4:3, landscape 8-bit computer) turned out not to be
+enough by itself, since SDL2's own Android backend independently resets
+the orientation at runtime unless told otherwise (`SDL_HINT_ORIENTATIONS`)
+— confirmed fixed via `adb shell dumpsys window` showing the runtime
+orientation actually matching the lock, not just the manifest declaring it.
 
 There's also best-effort support for OUYA, the discontinued Android-based
 console — an intent-filter and banner image so it shows up in OUYA's own

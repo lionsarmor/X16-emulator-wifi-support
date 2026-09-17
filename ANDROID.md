@@ -35,6 +35,37 @@ before expecting a finished app.
   signature) confirmed by disassembling the actual compiled `.dex`, not
   just by reading the source. Not yet confirmed making a real network
   request on an actual device.
+- **Two real, on-device bugs found and fixed - not just compile-checked.**
+  Getting this running on an actual Android Virtual Device (AVD) surfaced
+  both immediately:
+  - A guaranteed crash on every single launch, before any command-line
+    parsing even ran: `main.c` called `strlen()` on `SDL_GetBasePath()`'s
+    return value unconditionally, and that function is explicitly
+    unsupported on Android (`SDL_sysfilesystem.c` returns `NULL` there
+    always) - `strlen(NULL)` is an instant SIGSEGV. Fixed with a null
+    check; the fallback path it guards is unused on Android anyway, since
+    `X16Activity` always passes an explicit `-rom` path.
+  - Touches and mouse clicks landing nowhere near where they were
+    tapped, because the app had no fixed orientation and fought the
+    device over portrait vs. landscape at startup, leaving the
+    touch-to-logical-coordinate math computed against transiently stale
+    window dimensions. Fixing this took two changes, not one:
+    `android:screenOrientation="landscape"` in the manifest turned out
+    not to be sufficient by itself, since SDL2's own Android backend
+    independently calls `setRequestedOrientation()` once the window
+    exists and, with no orientation hint set, defaults to
+    `SCREEN_ORIENTATION_FULL_SENSOR` - silently overriding the manifest.
+    The real fix was also setting `SDL_HINT_ORIENTATIONS` in `video.c`
+    before window creation. Confirmed via
+    `adb shell dumpsys window | grep mCurrentAppOrientation`: before this,
+    it read `FULL_SENSOR` (10) despite the manifest; after, it correctly
+    reads `SENSOR_LANDSCAPE` (6), and screenshots confirm real landscape
+    rendering with taps landing within a few pixels of their target.
+  - Also added `-widescreen` to the default Android launch args (an
+    existing, already-tested desktop flag, not new code) once landscape
+    was locked in, so real content - DESK COMMANDER's chat, the
+    screensaver - gets far more of a phone/tablet's actual (much wider
+    than 4:3) display instead of a narrow letterboxed strip.
 - A full on-screen keyboard is built into the emulator itself (`x16-emulator/src/osk.c`),
   not just a system IME popup. A small keyboard icon is always drawn in the
   top-right corner; tapping it shows the complete X16 key layout - every
